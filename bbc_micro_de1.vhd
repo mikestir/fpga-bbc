@@ -316,6 +316,9 @@ signal adlc_enable		:	std_logic;		-- 0xFEA0-FEBF (Econet)
 signal adc_enable		:	std_logic;		-- 0xFEC0-FEDF
 signal tube_enable		:	std_logic;		-- 0xFEE0-FEFF
 
+-- Temporary hack
+signal kblink_enable	:	std_logic;
+
 begin
 	-------------------------
 	-- COMPONENT INSTANCES
@@ -441,6 +444,9 @@ begin
 	io_jim <= '1' when cpu_a(15 downto 8) = "11111101" else '0';
 	io_sheila <= '1' when cpu_a(15 downto 8) = "11111110" else '0';
 	
+	-- Temporary hack for keyboard links
+	kblink_enable <= '1' when cpu_a(15 downto 0) = "0000001010001111" else '0';
+	
 	-- SHEILA address demux
 	-- All the system peripherals are mapped into this page as follows:
 	-- 0xFE00 - 0xFE07 = MC6845 CRTC
@@ -500,6 +506,8 @@ begin
 				when "101" => adlc_enable <= '1';		-- 0xFEA0
 				when "110" => adc_enable <= '1';		-- 0xFEC0
 				when "111" => tube_enable <= '1';		-- 0xFEE0
+				when others =>
+					null;
 			end case;
 		end if;
 	end process;
@@ -509,6 +517,7 @@ begin
 		mos_d		when mos_enable = '1' else
 		"11111111"	when rom_enable = '1' else
 		crtc_do		when crtc_enable = '1' else
+		SW(7 downto 0) when kblink_enable = '1' else
 		SRAM_DQ(7 downto 0);
 	
 	-- SRAM bus
@@ -532,7 +541,7 @@ begin
 			SRAM_DQ(7 downto 0) <= (others => 'Z');
 			
 			-- Register SRAM signals to outputs (clock must be at least 2x CPU clock)
-			if cpu_clken = '0' then
+			if vid_clken = '1' then
 				-- Fetch data from previous CPU cycle
 				SRAM_WE_N <= not ram_write;
 				SRAM_ADDR <= "00" & cpu_a(15 downto 0);
@@ -542,7 +551,7 @@ begin
 			else
 				-- Fetch data from previous display cycle
 				SRAM_WE_N <= '1';
-				SRAM_ADDR <= "001" & crtc_ma(11 downto 0) & crtc_ra(2 downto 0);
+				SRAM_ADDR <= "000" & crtc_ma(11 downto 0) & crtc_ra(2 downto 0);
 			end if;
 		end if;
 	end process;
@@ -552,6 +561,11 @@ begin
 	r_in <= '0';
 	g_in <= '0';
 	b_in <= '0';
+	
+	GPIO_0(0) <= crtc_clken;
+	GPIO_0(1) <= crtc_hsync;
+	GPIO_0(2) <= crtc_vsync;
+	GPIO_0(3) <= crtc_de;
 	
 	-- CRTC drives video out (CSYNC on HSYNC output, VSYNC high)
 	VGA_HS <= not (crtc_hsync xor crtc_vsync);

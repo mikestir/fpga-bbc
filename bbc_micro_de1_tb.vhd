@@ -150,7 +150,7 @@ signal gpio_0		:	std_logic_vector(35 downto 0);
 signal gpio_1		:	std_logic_vector(35 downto 0);
 
 signal n_reset		:	std_logic	:= '0';
-signal slow			:	std_logic	:= '0';
+signal n_slow		:	std_logic	:= '1';
 
 type ram_t is array(0 to 65535) of std_logic_vector(15 downto 0);
 signal ram : ram_t;
@@ -215,7 +215,7 @@ begin
 		gpio_1		
 		);
 		
-	sw <= n_reset & slow & "00000000";
+	sw <= n_reset & n_slow & "00000101";
 	clock_50 <= not clock_50 after 10 ns;
 	clock_27(0) <= not clock_27(0) after 18.5 ns;
 	clock_27(1) <= not clock_27(1) after 18.5 ns;
