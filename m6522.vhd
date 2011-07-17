@@ -329,38 +329,41 @@ begin
     end if;
   end process;
 
-  p_read : process(cs, I_RW_L, I_RS, r_irb, r_ira, r_ddrb, r_ddra, t1c, r_t1l_l,
-                   r_t1l_h, t2c, r_sr, r_acr, r_pcr, r_ifr, r_ier, r_orb)
+  p_read : process
   begin
-    t1_r_reset_int <= false;
-    t2_r_reset_int <= false;
-    sr_read_ena <= false;
-    r_irb_hs <= '0';
-    r_ira_hs <= '0';
-    O_DATA <= x"00"; -- default
-    if (cs = '1') and (I_RW_L = '1') then
-      case I_RS is
-        --when x"0" => O_DATA <= r_irb; r_irb_hs <= '1';
-        -- fix from Mark McDougall, untested
-        when x"0" => O_DATA <= (r_irb and not r_ddrb) or (r_orb and r_ddrb); r_irb_hs <= '1';
-        when x"1" => O_DATA <= r_ira; r_ira_hs <= '1';
-        when x"2" => O_DATA <= r_ddrb;
-        when x"3" => O_DATA <= r_ddra;
-        when x"4" => O_DATA <= t1c( 7 downto 0);  t1_r_reset_int <= true;
-        when x"5" => O_DATA <= t1c(15 downto 8);
-        when x"6" => O_DATA <= r_t1l_l;
-        when x"7" => O_DATA <= r_t1l_h;
-        when x"8" => O_DATA <= t2c( 7 downto 0);  t2_r_reset_int <= true;
-        when x"9" => O_DATA <= t2c(15 downto 8);
-        when x"A" => O_DATA <= r_sr;              sr_read_ena <= true;
-        when x"B" => O_DATA <= r_acr;
-        when x"C" => O_DATA <= r_pcr;
-        when x"D" => O_DATA <= r_ifr;
-        when x"E" => O_DATA <= ('0' & r_ier);
-        when x"F" => O_DATA <= r_ira;
-        when others => null;
-      end case;
-    end if;
+	wait until rising_edge(CLK);
+	
+	if ENA_4 = '1' then
+		t1_r_reset_int <= false;
+		t2_r_reset_int <= false;
+		sr_read_ena <= false;
+		r_irb_hs <= '0';
+		r_ira_hs <= '0';
+		
+		if (cs = '1') and (I_RW_L = '1') then
+		  case I_RS is
+			--when x"0" => O_DATA <= r_irb; r_irb_hs <= '1';
+			-- fix from Mark McDougall, untested
+			when x"0" => O_DATA <= (r_irb and not r_ddrb) or (r_orb and r_ddrb); r_irb_hs <= '1';
+			when x"1" => O_DATA <= r_ira; r_ira_hs <= '1';
+			when x"2" => O_DATA <= r_ddrb;
+			when x"3" => O_DATA <= r_ddra;
+			when x"4" => O_DATA <= t1c( 7 downto 0);  t1_r_reset_int <= true;
+			when x"5" => O_DATA <= t1c(15 downto 8);
+			when x"6" => O_DATA <= r_t1l_l;
+			when x"7" => O_DATA <= r_t1l_h;
+			when x"8" => O_DATA <= t2c( 7 downto 0);  t2_r_reset_int <= true;
+			when x"9" => O_DATA <= t2c(15 downto 8);
+			when x"A" => O_DATA <= r_sr;              sr_read_ena <= true;
+			when x"B" => O_DATA <= r_acr;
+			when x"C" => O_DATA <= r_pcr;
+			when x"D" => O_DATA <= r_ifr;
+			when x"E" => O_DATA <= ('0' & r_ier);
+			when x"F" => O_DATA <= r_ira;
+			when others => null;
+		  end case;
+		end if;
+	end if;
 
   end process;
   --
