@@ -122,6 +122,35 @@ port (
 );
 end component;
 
+------------------------------
+-- Test UART for custom ROM
+------------------------------
+
+component simple_uart is
+generic (
+	f_clock		:	natural	:= 32000000;
+	baud_rate	:	natural	:= 19200
+	);
+port (
+	CLOCK		:	in	std_logic;
+	nRESET		:	in	std_logic;
+	
+	ENABLE		:	in	std_logic;
+	-- Read not write
+	R_nW		:	in	std_logic;
+	-- Data not status (address)
+	S_nD		:	in	std_logic;
+	-- Data bus in
+	DI			:	in	std_logic_vector(7 downto 0);
+	-- Data bus out
+	DO			:	out	std_logic_vector(7 downto 0);
+	
+	-- Port pins
+	RXD			:	in	std_logic;
+	TXD			:	out	std_logic
+	);
+end component;
+
 ---------
 -- CPU
 ---------
@@ -234,6 +263,67 @@ component os12 IS
 	);
 end component;
 
+--------------
+-- Test ROM
+--------------
+
+component ehbasic IS
+	PORT
+	(
+		address		: IN STD_LOGIC_VECTOR (13 DOWNTO 0);
+		clock		: IN STD_LOGIC ;
+		q			: OUT STD_LOGIC_VECTOR (7 DOWNTO 0)
+	);
+end component;
+
+--------------
+-- 6522 VIA
+--------------
+
+component M6522 is
+  port (
+
+    I_RS              : in    std_logic_vector(3 downto 0);
+    I_DATA            : in    std_logic_vector(7 downto 0);
+    O_DATA            : out   std_logic_vector(7 downto 0);
+    O_DATA_OE_L       : out   std_logic;
+
+    I_RW_L            : in    std_logic;
+    I_CS1             : in    std_logic;
+    I_CS2_L           : in    std_logic;
+
+    O_IRQ_L           : out   std_logic; -- note, not open drain
+    -- port a
+    I_CA1             : in    std_logic;
+    I_CA2             : in    std_logic;
+    O_CA2             : out   std_logic;
+    O_CA2_OE_L        : out   std_logic;
+
+    I_PA              : in    std_logic_vector(7 downto 0);
+    O_PA              : out   std_logic_vector(7 downto 0);
+    O_PA_OE_L         : out   std_logic_vector(7 downto 0);
+
+    -- port b
+    I_CB1             : in    std_logic;
+    O_CB1             : out   std_logic;
+    O_CB1_OE_L        : out   std_logic;
+
+    I_CB2             : in    std_logic;
+    O_CB2             : out   std_logic;
+    O_CB2_OE_L        : out   std_logic;
+
+    I_PB              : in    std_logic_vector(7 downto 0);
+    O_PB              : out   std_logic_vector(7 downto 0);
+    O_PB_OE_L         : out   std_logic_vector(7 downto 0);
+
+	-- FIXME: Revisit timing in this component.  Does it really need a 4x clock?
+    I_P2_H            : in    std_logic; -- high for phase 2 clock  ____----__
+    RESET_L           : in    std_logic;
+    ENA_4             : in    std_logic; -- clk enable (4x system clock rate)
+    CLK               : in    std_logic
+    );
+end component;
+
 -------------
 -- Signals
 -------------
@@ -251,6 +341,9 @@ signal clken_counter	:	unsigned(3 downto 0);
 signal slomo_counter	:	unsigned(17 downto 0);
 signal cpu_clken		:	std_logic;
 signal vid_clken		:	std_logic;
+
+-- Testing
+signal test_uart_do		:	std_logic_vector(7 downto 0);
 
 -- CPU signals
 signal cpu_mode			:	std_logic_vector(1 downto 0);
@@ -279,7 +372,7 @@ signal crtc_vsync		:	std_logic;
 signal crtc_hsync		:	std_logic;
 signal crtc_de			:	std_logic;
 signal crtc_cursor		:	std_logic;
-signal crtc_lpstb		:	std_logic;
+signal crtc_lpstb		:	std_logic := '0';
 signal crtc_ma			:	std_logic_vector(13 downto 0);
 signal crtc_ra			:	std_logic_vector(4 downto 0);
 
@@ -294,6 +387,62 @@ signal b_out			:	std_logic;
 
 -- MOS ROM signals
 signal mos_d			:	std_logic_vector(7 downto 0);
+
+-- System VIA signals
+signal sys_via_do		:	std_logic_vector(7 downto 0);
+signal sys_via_do_oe_n	:	std_logic;
+signal sys_via_irq_n	:	std_logic;
+signal sys_via_ca1_in	:	std_logic := '0';
+signal sys_via_ca2_in	:	std_logic := '0';
+signal sys_via_ca2_out	:	std_logic;
+signal sys_via_ca2_oe_n	:	std_logic;
+signal sys_via_pa_in	:	std_logic_vector(7 downto 0);
+signal sys_via_pa_out	:	std_logic_vector(7 downto 0);
+signal sys_via_pa_oe_n	:	std_logic_vector(7 downto 0);
+signal sys_via_cb1_in	:	std_logic := '0';
+signal sys_via_cb1_out	:	std_logic;
+signal sys_via_cb1_oe_n	:	std_logic;
+signal sys_via_cb2_in	:	std_logic := '0';
+signal sys_via_cb2_out	:	std_logic;
+signal sys_via_cb2_oe_n	:	std_logic;
+signal sys_via_pb_in	:	std_logic_vector(7 downto 0);
+signal sys_via_pb_out	:	std_logic_vector(7 downto 0);
+signal sys_via_pb_oe_n	:	std_logic_vector(7 downto 0);
+
+-- User VIA signals
+signal user_via_do		:	std_logic_vector(7 downto 0);
+signal user_via_do_oe_n	:	std_logic;
+signal user_via_irq_n	:	std_logic;
+signal user_via_ca1_in	:	std_logic := '0';
+signal user_via_ca2_in	:	std_logic := '0';
+signal user_via_ca2_out	:	std_logic;
+signal user_via_ca2_oe_n	:	std_logic;
+signal user_via_pa_in	:	std_logic_vector(7 downto 0);
+signal user_via_pa_out	:	std_logic_vector(7 downto 0);
+signal user_via_pa_oe_n	:	std_logic_vector(7 downto 0);
+signal user_via_cb1_in	:	std_logic := '0';
+signal user_via_cb1_out	:	std_logic;
+signal user_via_cb1_oe_n	:	std_logic;
+signal user_via_cb2_in	:	std_logic := '0';
+signal user_via_cb2_out	:	std_logic;
+signal user_via_cb2_oe_n	:	std_logic;
+signal user_via_pb_in	:	std_logic_vector(7 downto 0);
+signal user_via_pb_out	:	std_logic_vector(7 downto 0);
+signal user_via_pb_oe_n	:	std_logic_vector(7 downto 0);
+
+-- Common VIA signals
+signal via_clken		:	std_logic;
+signal via_phase2		:	std_logic;
+
+-- IC32 latch on System VIA
+signal ic32				:	std_logic_vector(7 downto 0);
+signal sound_enable_n	:	std_logic;
+signal speech_read_n	:	std_logic;
+signal speech_write_n	:	std_logic;
+signal keyb_enable_n	:	std_logic;
+signal disp_addr_offs	:	std_logic_vector(1 downto 0);
+signal caps_lock_led_n	:	std_logic;
+signal shift_lock_led_n	:	std_logic;
 
 -- Memory enables
 signal ram_enable		:	std_logic;		-- 0x0000
@@ -316,9 +465,6 @@ signal adlc_enable		:	std_logic;		-- 0xFEA0-FEBF (Econet)
 signal adc_enable		:	std_logic;		-- 0xFEC0-FEDF
 signal tube_enable		:	std_logic;		-- 0xFEE0-FEFF
 
--- Temporary hack
-signal kblink_enable	:	std_logic;
-
 begin
 	-------------------------
 	-- COMPONENT INSTANCES
@@ -336,6 +482,20 @@ begin
 	addr2 : seg7 port map (cpu_a(11 downto 8), HEX2);
 	addr1 : seg7 port map (cpu_a(7 downto 4), HEX1);
 	addr0 : seg7 port map (cpu_a(3 downto 0), HEX0);
+	
+	-- Test UART
+	
+	test_uart : simple_uart port map (
+		clock,
+		reset_n,
+		io_fred,
+		cpu_r_nw,
+		cpu_a(0),
+		cpu_do,
+		test_uart_do,
+		UART_RXD,
+		UART_TXD
+		);
 
 	-- 6502 CPU
 	cpu : T65 port map (
@@ -395,18 +555,91 @@ begin
 		);
 		
 	-- MOS ROM
-	mos : os12 port map (
+--	mos : os12 port map (
+--		cpu_a(13 downto 0),
+--		clock,
+--		mos_d );
+	test_rom : ehbasic port map (
 		cpu_a(13 downto 0),
-		clock,
-		mos_d );		
+		clock, mos_d );
+		
+	-- System VIA
+	system_via : m6522 port map (
+		cpu_a(3 downto 0),
+		cpu_do,
+		sys_via_do,
+		sys_via_do_oe_n,
+		cpu_r_nw,
+		sys_via_enable,
+		'0', -- nCS2
+		sys_via_irq_n,
+		sys_via_ca1_in,
+		sys_via_ca2_in,
+		sys_via_ca2_out,
+		sys_via_ca2_oe_n,
+		sys_via_pa_in,
+		sys_via_pa_out,
+		sys_via_pa_oe_n,
+		sys_via_cb1_in,
+		sys_via_cb1_out,
+		sys_via_cb1_oe_n,
+		sys_via_cb2_in,
+		sys_via_cb2_out,
+		sys_via_cb2_oe_n,
+		sys_via_pb_in,
+		sys_via_pb_out,
+		sys_via_pb_oe_n,
+		via_phase2,
+		reset_n,
+		via_clken,
+		clock
+		);
+	
+	-- User VIA
+	user_via : m6522 port map (
+		cpu_a(3 downto 0),
+		cpu_do,
+		user_via_do,
+		user_via_do_oe_n,
+		cpu_r_nw,
+		user_via_enable,
+		'0', -- nCS2
+		user_via_irq_n,
+		user_via_ca1_in,
+		user_via_ca2_in,
+		user_via_ca2_out,
+		user_via_ca2_oe_n,
+		user_via_pa_in,
+		user_via_pa_out,
+		user_via_pa_oe_n,
+		user_via_cb1_in,
+		user_via_cb1_out,
+		user_via_cb1_oe_n,
+		user_via_cb2_in,
+		user_via_cb2_out,
+		user_via_cb2_oe_n,
+		user_via_pb_in,
+		user_via_pb_out,
+		user_via_pb_oe_n,
+		via_phase2,
+		reset_n,
+		via_clken,
+		clock
+		);
 	
 	-- Asynchronous reset
 	pll_reset <= not SW(9);
 	reset_n <= not (pll_reset or not pll_locked);
 		
 	-- Clock enable generation
+	-- CPU is on cycle 0 of 16 (2 MHz)
+	-- Video is on all odd cycles
 	cpu_clken <= '1' when clken_counter = 0 and (SW(8) = '1' or slomo_counter = 0) else '0';
 	vid_clken <= clken_counter(0);
+	-- FIXME: VIAs - this is wrong.  They should actually run at 1MHz (so 4 MHz clken in this
+	-- case) and the CPU should be stalled until the 1 MHz bus cycle is complete
+	via_clken <= clken_counter(0) and clken_counter(1);
+	via_phase2 <= clken_counter(3);
 	process(clock,reset_n)
 	begin
 		if reset_n = '0' then
@@ -424,7 +657,6 @@ begin
 	cpu_mode <= "00"; -- 6502
 	cpu_ready <= '1';
 	cpu_abort_n <= '1';
-	cpu_irq_n <= '1';
 	cpu_nmi_n <= '1';
 	cpu_so_n <= '1';
 	
@@ -443,9 +675,6 @@ begin
 	io_fred <= '1' when cpu_a(15 downto 8) = "11111100" else '0';
 	io_jim <= '1' when cpu_a(15 downto 8) = "11111101" else '0';
 	io_sheila <= '1' when cpu_a(15 downto 8) = "11111110" else '0';
-	
-	-- Temporary hack for keyboard links
-	kblink_enable <= '1' when cpu_a(15 downto 0) = "0000001010001111" else '0';
 	
 	-- SHEILA address demux
 	-- All the system peripherals are mapped into this page as follows:
@@ -512,13 +741,16 @@ begin
 		end if;
 	end process;
 	
-	-- CPU data bus mux
+	-- CPU data bus mux and interrupts
 	cpu_di <=
 		mos_d		when mos_enable = '1' else
 		"11111111"	when rom_enable = '1' else
 		crtc_do		when crtc_enable = '1' else
-		SW(7 downto 0) when kblink_enable = '1' else
+		sys_via_do	when sys_via_enable = '1' else
+		user_via_do	when user_via_enable = '1' else
+		test_uart_do when io_fred = '1' else
 		SRAM_DQ(7 downto 0);
+	cpu_irq_n <= sys_via_irq_n and user_via_irq_n;
 	
 	-- SRAM bus
 	SRAM_UB_N <= '1';
@@ -565,7 +797,7 @@ begin
 	GPIO_0(0) <= crtc_clken;
 	GPIO_0(1) <= crtc_hsync;
 	GPIO_0(2) <= crtc_vsync;
-	GPIO_0(3) <= crtc_de;
+	GPIO_0(3) <= not (crtc_hsync xor crtc_vsync);
 	
 	-- CRTC drives video out (CSYNC on HSYNC output, VSYNC high)
 	VGA_HS <= not (crtc_hsync xor crtc_vsync);
@@ -573,5 +805,72 @@ begin
 	VGA_R <= r_out & r_out & r_out & r_out;
 	VGA_G <= g_out & g_out & g_out & g_out;
 	VGA_B <= b_out & b_out & b_out & b_out;
+	
+	-- Connections to System VIA
+	sys_via_ca1_in <= crtc_vsync;
+	sys_via_cb1_in <= crtc_lpstb;
+	
+	-- Connections to User VIA (user port is output on green LEDs)
+	--LEDG <= user_via_pb_out;
+	
+	-- IC32 latch
+	sound_enable_n <= ic32(0);
+	speech_write_n <= ic32(1);
+	speech_read_n <= ic32(2);
+	keyb_enable_n <= ic32(3);
+	disp_addr_offs <= ic32(5 downto 4);
+	caps_lock_led_n <= ic32(6);
+	shift_lock_led_n <= ic32(7);
+	
+	process(clock,reset_n)
+	variable bit_num : integer;
+	begin
+		bit_num := to_integer(unsigned(sys_via_pb_out(2 downto 0)));
+	
+		if reset_n = '0' then
+			ic32 <= (others => '0');
+		elsif rising_edge(clock) then
+			ic32(bit_num) <= sys_via_pb_out(3);
+		end if;
+	end process;
+	
+	LEDG <= ic32;
+	
+	-- Keyboard LEDs
+	LEDR(0) <= not caps_lock_led_n;
+	LEDR(1) <= not shift_lock_led_n;
+	
+	-- Hack for jumper links
+	process(sys_via_pa_out)
+	begin
+		sys_via_pa_in <= sys_via_pa_out;
+		
+		if sys_via_pa_out(6 downto 4) = "000" then
+			case to_integer(unsigned(sys_via_pa_out(3 downto 0))) is
+			when 2 => sys_via_pa_in(7) <= SW(7);
+			when 3 => sys_via_pa_in(7) <= SW(6);
+			when 4 => sys_via_pa_in(7) <= SW(5);
+			when 5 => sys_via_pa_in(7) <= SW(4);
+			when 6 => sys_via_pa_in(7) <= SW(3);
+			when 7 => sys_via_pa_in(7) <= SW(2);
+			when 8 => sys_via_pa_in(7) <= SW(1);
+			when 9 => sys_via_pa_in(7) <= SW(0);
+			when others => sys_via_pa_in(7) <= '1';
+			end case;
+		else
+			sys_via_pa_in(7) <= '1';
+		end if;
+	end process;
+	
+--	process(clock,reset_n)
+--	begin
+--		if reset_n = '0' then
+--			LEDG <= "00000000";
+--		elsif rising_edge(clock) then
+--			if cpu_a(15 downto 0) = "0000001010001111" and cpu_r_nw = '0' then
+--				LEDG <= cpu_do;
+--			end if;
+--		end if;
+--	end process;
 		
 end architecture;
