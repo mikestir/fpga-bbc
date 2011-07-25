@@ -512,4 +512,5 @@ set_global_assignment -name QIP_FILE pll32.qip
 set_global_assignment -name VHDL_FILE bbc_micro_de1.vhd
 set_global_assignment -name VHDL_FILE bbc_micro_de1_tb.vhd
 set_global_assignment -name QIP_FILE ehbasic.qip
+set_global_assignment -name VHDL_FILE m6522_tb.vhd
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top

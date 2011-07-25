@@ -191,7 +191,6 @@ architecture RTL of M6522 is
 
   signal final_irq         : std_logic;
 begin
-
   p_phase : process
   begin
     -- internal clock phase

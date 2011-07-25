@@ -337,10 +337,16 @@ signal reset_n		:	std_logic;
 -- Clock enable counter
 -- CPU and video cycles are interleaved.  The CPU runs at 2 MHz (every 16th
 -- cycle) and the video subsystem is enabled on every odd cycle.
-signal clken_counter	:	unsigned(3 downto 0);
+signal clken_counter	:	unsigned(4 downto 0);
 signal slomo_counter	:	unsigned(17 downto 0);
-signal cpu_clken		:	std_logic;
-signal vid_clken		:	std_logic;
+signal cpu_cycle		:	std_logic; -- Qualifies all 2 MHz cycles
+signal cpu_cycle_mask	:	std_logic; -- Set to mask CPU cycles until 1 MHz cycle is complete
+signal cpu_clken		:	std_logic; -- 2 MHz cycles in which the CPU is enabled
+-- IO cycles are out of phase with the CPU
+signal vid_clken		:	std_logic; -- 16 MHz video cycles
+signal mhz4_clken		:	std_logic; -- Used by 6522
+signal mhz2_clken		:	std_logic; -- Used for latching CPU address for clock stretch
+signal mhz1_clken		:	std_logic; -- 1 MHz bus and associated peripherals, 6522 phase 2
 
 -- Testing
 signal test_uart_do		:	std_logic_vector(7 downto 0);
@@ -375,6 +381,10 @@ signal crtc_cursor		:	std_logic;
 signal crtc_lpstb		:	std_logic := '0';
 signal crtc_ma			:	std_logic_vector(13 downto 0);
 signal crtc_ra			:	std_logic_vector(4 downto 0);
+
+-- Decoded display address after address translation for hardware
+-- scrolling
+signal display_a		:	std_logic_vector(14 downto 0);
 
 -- "VIDPROC" signals
 signal vidproc_invert_n	:	std_logic;
@@ -430,10 +440,6 @@ signal user_via_pb_in	:	std_logic_vector(7 downto 0);
 signal user_via_pb_out	:	std_logic_vector(7 downto 0);
 signal user_via_pb_oe_n	:	std_logic_vector(7 downto 0);
 
--- Common VIA signals
-signal via_clken		:	std_logic;
-signal via_phase2		:	std_logic;
-
 -- IC32 latch on System VIA
 signal ic32				:	std_logic_vector(7 downto 0);
 signal sound_enable_n	:	std_logic;
@@ -464,6 +470,8 @@ signal fddc_enable		:	std_logic;		-- 0xFE80-FE9F
 signal adlc_enable		:	std_logic;		-- 0xFEA0-FEBF (Econet)
 signal adc_enable		:	std_logic;		-- 0xFEC0-FEDF
 signal tube_enable		:	std_logic;		-- 0xFEE0-FEFF
+
+signal mhz1_enable		:	std_logic;		-- Set for access to any 1 MHz peripheral
 
 begin
 	-------------------------
@@ -555,13 +563,13 @@ begin
 		);
 		
 	-- MOS ROM
---	mos : os12 port map (
---		cpu_a(13 downto 0),
---		clock,
---		mos_d );
-	test_rom : ehbasic port map (
+	mos : os12 port map (
 		cpu_a(13 downto 0),
-		clock, mos_d );
+		clock,
+		mos_d );
+--	test_rom : ehbasic port map (
+--		cpu_a(13 downto 0),
+--		clock, mos_d );
 		
 	-- System VIA
 	system_via : m6522 port map (
@@ -589,9 +597,9 @@ begin
 		sys_via_pb_in,
 		sys_via_pb_out,
 		sys_via_pb_oe_n,
-		via_phase2,
+		mhz1_clken,
 		reset_n,
-		via_clken,
+		mhz4_clken,
 		clock
 		);
 	
@@ -621,9 +629,9 @@ begin
 		user_via_pb_in,
 		user_via_pb_out,
 		user_via_pb_oe_n,
-		via_phase2,
+		mhz1_clken,
 		reset_n,
-		via_clken,
+		mhz4_clken,
 		clock
 		);
 	
@@ -631,16 +639,20 @@ begin
 	pll_reset <= not SW(9);
 	reset_n <= not (pll_reset or not pll_locked);
 		
-	-- Clock enable generation
-	-- CPU is on cycle 0 of 16 (2 MHz)
-	-- Video is on all odd cycles
-	cpu_clken <= '1' when clken_counter = 0 and (SW(8) = '1' or slomo_counter = 0) else '0';
-	vid_clken <= clken_counter(0);
-	-- FIXME: VIAs - this is wrong.  They should actually run at 1MHz (so 4 MHz clken in this
-	-- case) and the CPU should be stalled until the 1 MHz bus cycle is complete
-	via_clken <= clken_counter(0) and clken_counter(1);
-	via_phase2 <= clken_counter(3);
-	process(clock,reset_n)
+	-- Clock enable generation - 32 MHz clock split into 32 cycles
+	-- CPU is on 0 and 16 (but can be masked by 1 MHz bus accesses)
+	-- Video is on all odd cycles (16 MHz)
+	-- 1 MHz cycles are on cycle 31 (1 MHz)	
+	vid_clken <= clken_counter(0); -- 1,3,5...
+	mhz4_clken <= clken_counter(0) and clken_counter(1) and clken_counter(2); -- 7/15/23/31
+	mhz2_clken <= mhz4_clken and clken_counter(3); -- 15/31
+	mhz1_clken <= mhz2_clken and clken_counter(4); -- 31
+	cpu_cycle <=
+		not (clken_counter(0) or clken_counter(1) or clken_counter(2) or clken_counter(3))
+		when (SW(8) = '1' or slomo_counter = 0) else '0'; -- 0/16
+	cpu_clken <= cpu_cycle and not cpu_cycle_mask;
+	
+	clk_gen: process(clock,reset_n)
 	begin
 		if reset_n = '0' then
 			clken_counter <= (others => '0');
@@ -649,6 +661,24 @@ begin
 			clken_counter <= clken_counter + 1;
 			if clken_counter = 0 then
 				slomo_counter <= slomo_counter + 1;
+			end if;
+		end if;
+	end process;
+	
+	cycle_stretch: process(clock,reset_n)
+	begin
+		if reset_n = '0' then
+			cpu_cycle_mask <= '0';
+		elsif rising_edge(clock) and mhz2_clken = '1' then
+			if mhz1_enable = '1' and cpu_cycle_mask = '0' then
+				-- Block CPU cycles until 1 MHz cycle has completed
+				cpu_cycle_mask <= '1';
+			end if;
+			if mhz1_clken = '1' then
+				-- CPU can run again
+				-- FIXME: This may not be correct in terms of CPU cycles, but it
+				-- should work
+				cpu_cycle_mask <= '0';
 			end if;
 		end if;
 	end process;
@@ -675,6 +705,11 @@ begin
 	io_fred <= '1' when cpu_a(15 downto 8) = "11111100" else '0';
 	io_jim <= '1' when cpu_a(15 downto 8) = "11111101" else '0';
 	io_sheila <= '1' when cpu_a(15 downto 8) = "11111110" else '0';
+	-- The following IO regions are accessed at 1 MHz and hence will stall the
+	-- CPU accordingly
+	mhz1_enable <= io_fred or io_jim or
+		adc_enable or sys_via_enable or user_via_enable or
+		serproc_enable or acia_enable or crtc_enable;
 	
 	-- SHEILA address demux
 	-- All the system peripherals are mapped into this page as follows:
@@ -750,7 +785,8 @@ begin
 		user_via_do	when user_via_enable = '1' else
 		test_uart_do when io_fred = '1' else
 		SRAM_DQ(7 downto 0);
-	cpu_irq_n <= sys_via_irq_n and user_via_irq_n;
+	--cpu_irq_n <= sys_via_irq_n; -- and user_via_irq_n;
+	cpu_irq_n <= '1';
 	
 	-- SRAM bus
 	SRAM_UB_N <= '1';
@@ -783,8 +819,45 @@ begin
 			else
 				-- Fetch data from previous display cycle
 				SRAM_WE_N <= '1';
-				SRAM_ADDR <= "000" & crtc_ma(11 downto 0) & crtc_ra(2 downto 0);
+				SRAM_ADDR <= "000" & display_a;
 			end if;
+		end if;
+	end process;
+	
+	-- Address translation logic for calculation of display address
+	process(crtc_ma,crtc_ra,disp_addr_offs)
+	variable aa : unsigned(3 downto 0);
+	begin
+		if crtc_ma(12) = '0' then
+			-- No adjustment
+			aa := unsigned(crtc_ma(11 downto 8));
+		else
+			-- Address adjusted according to screen mode to compensate for
+			-- wrap at 0x8000.
+			case disp_addr_offs is
+			when "00" =>
+				-- Mode 3 - restart at 0x4000
+				aa := unsigned(crtc_ma(11 downto 8)) + 8;
+			when "01" =>
+				-- Mode 6 - restart at 0x6000
+				aa := unsigned(crtc_ma(11 downto 8)) + 12;
+			when "10" =>
+				-- Mode 0,1,2 - restart at 0x3000
+				aa := unsigned(crtc_ma(11 downto 8)) + 6;
+			when "11" =>
+				-- Mode 4,5 - restart at 0x5800
+				aa := unsigned(crtc_ma(11 downto 8)) + 11;
+			when others =>
+				null;
+			end case;
+		end if;
+		
+		if crtc_ma(13) = '0' then
+			-- HI RES
+			display_a <= std_logic_vector(aa(3 downto 0)) & crtc_ma(7 downto 0) & crtc_ra(2 downto 0);
+		else
+			-- TTX VDU
+			display_a <= std_logic(aa(3)) & "1111" & crtc_ma(9 downto 0);
 		end if;
 	end process;
 	
@@ -794,10 +867,10 @@ begin
 	g_in <= '0';
 	b_in <= '0';
 	
-	GPIO_0(0) <= crtc_clken;
-	GPIO_0(1) <= crtc_hsync;
-	GPIO_0(2) <= crtc_vsync;
-	GPIO_0(3) <= not (crtc_hsync xor crtc_vsync);
+	GPIO_0(0) <= not (crtc_hsync xor crtc_vsync);
+	GPIO_0(1) <= cpu_clken;
+	GPIO_0(2) <= cpu_cycle_mask;
+	GPIO_0(3) <= mhz1_enable;
 	
 	-- CRTC drives video out (CSYNC on HSYNC output, VSYNC high)
 	VGA_HS <= not (crtc_hsync xor crtc_vsync);
@@ -808,10 +881,12 @@ begin
 	
 	-- Connections to System VIA
 	sys_via_ca1_in <= crtc_vsync;
-	sys_via_cb1_in <= crtc_lpstb;
+	sys_via_ca2_in <= '0'; -- Keyboard interrupt
+	sys_via_cb1_in <= '0'; -- /EOC
+	sys_via_cb2_in <= crtc_lpstb;
 	
 	-- Connections to User VIA (user port is output on green LEDs)
-	--LEDG <= user_via_pb_out;
+	LEDG <= user_via_pb_out;
 	
 	-- IC32 latch
 	sound_enable_n <= ic32(0);
@@ -834,8 +909,6 @@ begin
 		end if;
 	end process;
 	
-	LEDG <= ic32;
-	
 	-- Keyboard LEDs
 	LEDR(0) <= not caps_lock_led_n;
 	LEDR(1) <= not shift_lock_led_n;
@@ -855,22 +928,12 @@ begin
 			when 7 => sys_via_pa_in(7) <= SW(2);
 			when 8 => sys_via_pa_in(7) <= SW(1);
 			when 9 => sys_via_pa_in(7) <= SW(0);
-			when others => sys_via_pa_in(7) <= '1';
+			when others => sys_via_pa_in(7) <= '0';
 			end case;
 		else
-			sys_via_pa_in(7) <= '1';
+			-- 'W' output of keyboard IC2 is inverse data, so 0 is no key pressed
+			sys_via_pa_in(7) <= '0';
 		end if;
 	end process;
-	
---	process(clock,reset_n)
---	begin
---		if reset_n = '0' then
---			LEDG <= "00000000";
---		elsif rising_edge(clock) then
---			if cpu_a(15 downto 0) = "0000001010001111" and cpu_r_nw = '0' then
---				LEDG <= cpu_do;
---			end if;
---		end if;
---	end process;
 		
 end architecture;
