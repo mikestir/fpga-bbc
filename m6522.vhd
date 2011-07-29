@@ -90,7 +90,8 @@ entity M6522 is
     I_P2_H            : in    std_logic; -- high for phase 2 clock  ____----__
     RESET_L           : in    std_logic;
     ENA_4             : in    std_logic; -- clk enable
-    CLK               : in    std_logic
+    CLK               : in    std_logic;
+    testout : out std_logic_vector(7 downto 0)
     );
 end;
 
@@ -191,6 +192,8 @@ architecture RTL of M6522 is
 
   signal final_irq         : std_logic;
 begin
+	testout <= r_ifr and "1" & r_ier;
+
   p_phase : process
   begin
     -- internal clock phase
@@ -597,17 +600,14 @@ begin
   --
   -- Timer 1
   --
-  p_timer1_done : process
+  p_timer1_done : process(t1c,phase,r_acr)
     variable done : boolean;
   begin
-    wait until rising_edge(CLK);
-    if (ENA_4 = '1') then
       done := (t1c = x"0000");
       t1c_done <= done and (phase = "11");
       if (phase = "11") then
         t1_reload_counter <= done and (r_acr(6) = '1');
       end if;
-    end if;
   end process;
 
   p_timer1 : process
@@ -626,12 +626,15 @@ begin
       elsif t1c_done then
         t1c_active <= false;
       end if;
+      if RESET_L = '0' then
+        t1c_active <= false;
+      end if;
 
       t1_toggle <= '0';
       if t1c_active and t1c_done then
         t1_toggle <= '1';
         t1_irq <= '1';
-      elsif t1_w_reset_int or t1_r_reset_int or (clear_irq(6) = '1') then
+      elsif RESET_L = '0' or t1_w_reset_int or t1_r_reset_int or (clear_irq(6) = '1') then
         t1_irq <= '0';
       end if;
     end if;
@@ -650,17 +653,14 @@ begin
     end if;
   end process;
 
-  p_timer2_done : process
+  p_timer2_done : process(t2c,phase)
     variable done : boolean;
   begin
-    wait until rising_edge(CLK);
-    if (ENA_4 = '1') then
       done := (t2c = x"0000");
       t2c_done <= done and (phase = "11");
       if (phase = "11") then
         t2_reload_counter <= done;
       end if;
-    end if;
   end process;
 
   p_timer2 : process
@@ -693,11 +693,13 @@ begin
       elsif t2c_done then
         t2c_active <= false;
       end if;
-
+      if RESET_L = '0' then
+		t2c_active <= false;
+	  end if;
 
       if t2c_active and t2c_done then
         t2_irq <= '1';
-      elsif t2_w_reset_int or t2_r_reset_int or (clear_irq(5) = '1') then
+      elsif RESET_L = '0' or t2_w_reset_int or t2_r_reset_int or (clear_irq(5) = '1') then
         t2_irq <= '0';
       end if;
     end if;

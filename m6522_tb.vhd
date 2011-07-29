@@ -46,7 +46,8 @@ component M6522 is
     I_P2_H            : in    std_logic; -- high for phase 2 clock  ____----__
     RESET_L           : in    std_logic;
     ENA_4             : in    std_logic; -- clk enable
-    CLK               : in    std_logic
+    CLK               : in    std_logic;
+    testout		: out std_logic_vector(7 downto 0)
     );
 end component;
 
@@ -80,6 +81,8 @@ signal n_reset	:	std_logic := '0';
 signal clken	:	std_logic := '0';
 signal clock	:	std_logic := '0';
 
+signal testout : std_logic_vector(7 downto 0);
+
 begin
 
 	uut: m6522 port map (
@@ -90,7 +93,7 @@ begin
 		cb1_in, cb1_out, n_cb1_oe,
 		cb2_in, cb2_out, n_cb2_oe,
 		pb_in, pb_out, n_pb_oe,
-		phase2, n_reset, clken, clock
+		phase2, n_reset, clken, clock, testout
 		);
 		
 	clock <= not clock after 125 ns; -- 4x 1 MHz
@@ -316,6 +319,24 @@ begin
 		reg_write("1001","00000000"); -- Should clear interrupt
 		wait for 50 us;
 		reg_read("1000"); -- Should clear interrupt
+		
+		-- Timer 2 test similar to BBC usage (speech interrupt)
+		-- PB6 high
+		pb_in(6) <= '1';
+		reg_write("1101","01111111"); -- Clear interrupts
+		reg_write("1110","01111111"); -- Disable all interrupts
+		reg_write("1011","00100000"); -- Timer 2 PB6 counter mode
+		reg_write("1000","00000001"); -- Start at 1
+		reg_write("1001","00000000");
+		reg_write("1110","10100000"); -- Enable timer 2 interrupt
+		wait for 5 us;
+		-- Generate falling edge
+		pb_in(6) <= '0';
+		wait for 5 us;
+		-- Clear interrupt
+		reg_write("1101","00100000");
+		-- Zero timer high byte
+		reg_write("1001","00000000");
 		
 		wait;
 	end process;

@@ -498,6 +498,10 @@ set_global_assignment -name PARTITION_NETLIST_TYPE SOURCE -section_id Top
 set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
 set_global_assignment -name LL_ROOT_REGION ON -section_id "Root Region"
 set_global_assignment -name LL_MEMBER_STATE LOCKED -section_id "Root Region"
+set_global_assignment -name MISC_FILE "U:/git_repos/fpga/bbc/bbc_micro_de1.dpf"
+set_location_assignment PIN_AB15 -to FL_CE_N
+set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "3.3-V LVTTL"
+set_global_assignment -name VHDL_FILE ps2_intf.vhd
 set_global_assignment -name VHDL_FILE simple_uart.vhd
 set_global_assignment -name VHDL_FILE m6522.vhd
 set_global_assignment -name VHDL_FILE seg7.vhd
@@ -513,4 +517,6 @@ set_global_assignment -name VHDL_FILE bbc_micro_de1.vhd
 set_global_assignment -name VHDL_FILE bbc_micro_de1_tb.vhd
 set_global_assignment -name QIP_FILE ehbasic.qip
 set_global_assignment -name VHDL_FILE m6522_tb.vhd
+set_global_assignment -name VHDL_FILE keyboard.vhd
+set_global_assignment -name VHDL_FILE debugger.vhd
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top

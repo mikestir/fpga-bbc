@@ -85,9 +85,10 @@ port (
 	-- Flash
 	FL_ADDR		:	out		std_logic_vector(21 downto 0);
 	FL_DQ		:	inout	std_logic_vector(7 downto 0);
-	FL_RST_N	:	in		std_logic;
-	FL_OE_N		:	in		std_logic;
-	FL_WE_N		:	in		std_logic;
+	FL_RST_N	:	out		std_logic;
+	FL_OE_N		:	out		std_logic;
+	FL_WE_N		:	out		std_logic;
+	FL_CE_N		:	out		std_logic;
 	
 	-- GPIO
 	GPIO_0		:	inout	std_logic_vector(35 downto 0);
@@ -109,17 +110,6 @@ component pll32 IS
 		c0			: OUT STD_LOGIC ;
 		locked		: OUT STD_LOGIC 
 	);
-end component;
-
------------------------
--- 7 segment display
------------------------
-
-component seg7 is
-port (
-	D			: in std_logic_vector(3 downto 0);
-	Q			: out std_logic_vector(6 downto 0)
-);
 end component;
 
 ------------------------------
@@ -320,8 +310,84 @@ component M6522 is
     I_P2_H            : in    std_logic; -- high for phase 2 clock  ____----__
     RESET_L           : in    std_logic;
     ENA_4             : in    std_logic; -- clk enable (4x system clock rate)
-    CLK               : in    std_logic
+    CLK               : in    std_logic;
+    testout : out std_logic_vector(7 downto 0)
     );
+end component;
+
+-----------------------------
+-- PS/2 Keyboard Emulation
+-----------------------------
+
+component keyboard is
+port (
+	CLOCK		:	in	std_logic;
+	nRESET		:	in	std_logic;
+	CLKEN_1MHZ	:	in	std_logic;
+	
+	-- PS/2 interface
+	PS2_CLK		:	in	std_logic;
+	PS2_DATA	:	in	std_logic;
+	
+	-- If 1 then column is incremented automatically at
+	-- 1 MHz rate
+	AUTOSCAN	:	in	std_logic;
+	
+	COLUMN		:	in	std_logic_vector(3 downto 0);
+	ROW			:	in	std_logic_vector(2 downto 0);
+	
+	-- 1 when currently selected key is down (AUTOSCAN disabled)
+	KEYPRESS	:	out	std_logic;
+	-- 1 when any key is down (except row 0)
+	INT			:	out	std_logic;
+	-- BREAK key output - 1 when pressed
+	BREAK_OUT	:	out	std_logic;
+	
+	-- DIP switch inputs
+	DIP_SWITCH	:	in	std_logic_vector(7 downto 0)
+	);
+end component;
+
+component debugger is
+generic (
+	-- Set this for a reasonable half flash duration relative to the
+	-- clock frequency
+	flash_divider	:	natural := 24
+	);
+port (
+	CLOCK		:	in	std_logic;
+	nRESET		:	in	std_logic;
+	-- CPU clock enable in
+	CLKEN_IN	:	in	std_logic;
+	-- Gated clock enable back out to CPU
+	CLKEN_OUT	:	out	std_logic;
+	
+	-- CPU
+	A_CPU		:	in	std_logic_vector(15 downto 0);
+	R_nW		:	in	std_logic;
+	SYNC		:	in	std_logic;
+	
+	-- Controls
+	-- RUN or HALT CPU
+	RUN			:	in	std_logic;
+	-- Push button to single-step in HALT mode
+	nSTEP		:	in	std_logic;
+	-- Push button to cycle display mode
+	nMODE		:	in	std_logic;
+	-- Push button to cycle display digit in edit mode
+	nDIGIT		:	in	std_logic;
+	-- Push button to cycle digit value in edit mode
+	nSET		:	in	std_logic;
+	
+	-- Output to display
+	DIGIT3		:	out	std_logic_vector(6 downto 0);
+	DIGIT2		:	out	std_logic_vector(6 downto 0);
+	DIGIT1		:	out	std_logic_vector(6 downto 0);
+	DIGIT0		:	out	std_logic_vector(6 downto 0);
+	
+	LED_BREAKPOINT	:	out	std_logic;
+	LED_WATCHPOINT	:	out	std_logic
+	);
 end component;
 
 -------------
@@ -332,16 +398,17 @@ end component;
 signal pll_reset	:	std_logic;
 signal pll_locked	:	std_logic;
 signal clock		:	std_logic;
+signal hard_reset_n	:	std_logic;
 signal reset_n		:	std_logic;
 
 -- Clock enable counter
 -- CPU and video cycles are interleaved.  The CPU runs at 2 MHz (every 16th
 -- cycle) and the video subsystem is enabled on every odd cycle.
 signal clken_counter	:	unsigned(4 downto 0);
-signal slomo_counter	:	unsigned(17 downto 0);
 signal cpu_cycle		:	std_logic; -- Qualifies all 2 MHz cycles
 signal cpu_cycle_mask	:	std_logic; -- Set to mask CPU cycles until 1 MHz cycle is complete
 signal cpu_clken		:	std_logic; -- 2 MHz cycles in which the CPU is enabled
+signal cpu_debug_clken	:	std_logic; -- CPU clken return from hardware debugger
 -- IO cycles are out of phase with the CPU
 signal vid_clken		:	std_logic; -- 16 MHz video cycles
 signal mhz4_clken		:	std_logic; -- Used by 6522
@@ -418,6 +485,7 @@ signal sys_via_cb2_oe_n	:	std_logic;
 signal sys_via_pb_in	:	std_logic_vector(7 downto 0);
 signal sys_via_pb_out	:	std_logic_vector(7 downto 0);
 signal sys_via_pb_oe_n	:	std_logic_vector(7 downto 0);
+signal sys_via_testout	:	std_logic_vector(7 downto 0);
 
 -- User VIA signals
 signal user_via_do		:	std_logic_vector(7 downto 0);
@@ -439,6 +507,7 @@ signal user_via_cb2_oe_n	:	std_logic;
 signal user_via_pb_in	:	std_logic_vector(7 downto 0);
 signal user_via_pb_out	:	std_logic_vector(7 downto 0);
 signal user_via_pb_oe_n	:	std_logic_vector(7 downto 0);
+signal user_via_testout	:	std_logic_vector(7 downto 0);
 
 -- IC32 latch on System VIA
 signal ic32				:	std_logic_vector(7 downto 0);
@@ -449,6 +518,13 @@ signal keyb_enable_n	:	std_logic;
 signal disp_addr_offs	:	std_logic_vector(1 downto 0);
 signal caps_lock_led_n	:	std_logic;
 signal shift_lock_led_n	:	std_logic;
+
+-- Keyboard
+signal keyb_column		:	std_logic_vector(3 downto 0);
+signal keyb_row			:	std_logic_vector(2 downto 0);
+signal keyb_out			:	std_logic;
+signal keyb_int			:	std_logic;
+signal keyb_break		:	std_logic;
 
 -- Memory enables
 signal ram_enable		:	std_logic;		-- 0x0000
@@ -471,6 +547,9 @@ signal adlc_enable		:	std_logic;		-- 0xFEA0-FEBF (Econet)
 signal adc_enable		:	std_logic;		-- 0xFEC0-FEDF
 signal tube_enable		:	std_logic;		-- 0xFEE0-FEFF
 
+-- ROM select latch
+signal romsel			:	std_logic_vector(3 downto 0);
+
 signal mhz1_enable		:	std_logic;		-- Set for access to any 1 MHz peripheral
 
 begin
@@ -484,15 +563,25 @@ begin
 		CLOCK_24(0),
 		clock,
 		pll_locked );
-	
-	-- Display of address bus	
-	addr3 : seg7 port map (cpu_a(15 downto 12), HEX3);
-	addr2 : seg7 port map (cpu_a(11 downto 8), HEX2);
-	addr1 : seg7 port map (cpu_a(7 downto 4), HEX1);
-	addr0 : seg7 port map (cpu_a(3 downto 0), HEX0);
+		
+	-- Hardware debugger block (single-step, breakpoints)
+	debug:	debugger port map (
+		clock,
+		hard_reset_n,
+		cpu_clken,
+		cpu_debug_clken,
+		cpu_a(15 downto 0), cpu_r_nw, cpu_sync,
+		SW(8), -- RUN
+		KEY(3), -- STEP
+		KEY(2), -- MODE
+		KEY(1), -- DIGIT
+		KEY(0), -- SET
+		HEX3, HEX2, HEX1, HEX0,
+		LEDR(3), -- BREAKPOINT
+		LEDR(2) -- WATCHPOINT
+		);
 	
 	-- Test UART
-	
 	test_uart : simple_uart port map (
 		clock,
 		reset_n,
@@ -509,7 +598,7 @@ begin
 	cpu : T65 port map (
 		cpu_mode,
 		reset_n,
-		cpu_clken,
+		cpu_debug_clken,
 		clock,
 		cpu_ready,
 		cpu_abort_n,
@@ -598,9 +687,9 @@ begin
 		sys_via_pb_out,
 		sys_via_pb_oe_n,
 		mhz1_clken,
-		reset_n,
+		hard_reset_n, -- System VIA is reset by power on reset only
 		mhz4_clken,
-		clock
+		clock, sys_via_testout
 		);
 	
 	-- User VIA
@@ -632,12 +721,29 @@ begin
 		mhz1_clken,
 		reset_n,
 		mhz4_clken,
-		clock
+		clock, user_via_testout
+		);
+		
+	-- Keyboard
+	keyb : keyboard port map (
+		clock, hard_reset_n, mhz1_clken,
+		PS2_CLK, PS2_DAT,
+		keyb_enable_n,
+		keyb_column,
+		keyb_row,
+		keyb_out,
+		keyb_int,
+		keyb_break,
+		SW(7 downto 0)
 		);
 	
 	-- Asynchronous reset
+	-- PLL is reset by external reset switch
 	pll_reset <= not SW(9);
-	reset_n <= not (pll_reset or not pll_locked);
+	-- Keyboard and System VIA are reset by external reset switch or PLL being out of lock
+	hard_reset_n <= not (pll_reset or not pll_locked);
+	-- Rest of system is reset by all of the above plus the keyboard BREAK key
+	reset_n <= hard_reset_n and not keyb_break;
 		
 	-- Clock enable generation - 32 MHz clock split into 32 cycles
 	-- CPU is on 0 and 16 (but can be masked by 1 MHz bus accesses)
@@ -647,21 +753,15 @@ begin
 	mhz4_clken <= clken_counter(0) and clken_counter(1) and clken_counter(2); -- 7/15/23/31
 	mhz2_clken <= mhz4_clken and clken_counter(3); -- 15/31
 	mhz1_clken <= mhz2_clken and clken_counter(4); -- 31
-	cpu_cycle <=
-		not (clken_counter(0) or clken_counter(1) or clken_counter(2) or clken_counter(3))
-		when (SW(8) = '1' or slomo_counter = 0) else '0'; -- 0/16
+	cpu_cycle <= not (clken_counter(0) or clken_counter(1) or clken_counter(2) or clken_counter(3)); -- 0/16
 	cpu_clken <= cpu_cycle and not cpu_cycle_mask;
 	
 	clk_gen: process(clock,reset_n)
 	begin
 		if reset_n = '0' then
 			clken_counter <= (others => '0');
-			slomo_counter <= (others => '0');
 		elsif rising_edge(clock) then
 			clken_counter <= clken_counter + 1;
-			if clken_counter = 0 then
-				slomo_counter <= slomo_counter + 1;
-			end if;
 		end if;
 	end process;
 	
@@ -778,15 +878,31 @@ begin
 	
 	-- CPU data bus mux and interrupts
 	cpu_di <=
+		SRAM_DQ(7 downto 0) when ram_enable = '1' else
+		FL_DQ		when rom_enable = '1' else
 		mos_d		when mos_enable = '1' else
-		"11111111"	when rom_enable = '1' else
 		crtc_do		when crtc_enable = '1' else
+		"00000010"	when acia_enable = '1' else
 		sys_via_do	when sys_via_enable = '1' else
 		user_via_do	when user_via_enable = '1' else
 		test_uart_do when io_fred = '1' else
-		SRAM_DQ(7 downto 0);
-	--cpu_irq_n <= sys_via_irq_n; -- and user_via_irq_n;
-	cpu_irq_n <= '1';
+		(others => '0'); -- un-decoded locations are pulled down by RP1
+	cpu_irq_n <= sys_via_irq_n; -- and user_via_irq_n;
+	--cpu_irq_n <= '1';
+	
+	-- ROMs are in external flash
+	FL_RST_N <= reset_n;
+	FL_CE_N <= '0';
+	FL_OE_N <= '0';
+	FL_WE_N <= '1';
+	FL_ADDR(13 downto 0) <= cpu_a(13 downto 0);
+	FL_ADDR(21 downto 16) <= (others => '0');
+	FL_ADDR(15 downto 14) <= 
+		"00" when mos_enable = '1' else
+		"01" when rom_enable = '1' and romsel(1 downto 0) = "11" else	-- BASIC
+		--"10" when rom_enable = '1' and romsel(1 downto 0) = "00" else
+		"11";
+		
 	
 	-- SRAM bus
 	SRAM_UB_N <= '1';
@@ -863,14 +979,14 @@ begin
 	
 	-- VIDPROC
 	vidproc_invert_n <= '1';
-	r_in <= '0';
+	r_in <= '0'; -- FIXME: From SAA5050
 	g_in <= '0';
 	b_in <= '0';
 	
-	GPIO_0(0) <= not (crtc_hsync xor crtc_vsync);
-	GPIO_0(1) <= cpu_clken;
-	GPIO_0(2) <= cpu_cycle_mask;
-	GPIO_0(3) <= mhz1_enable;
+	GPIO_0(0) <= cpu_irq_n;
+	GPIO_0(1) <= keyb_out;
+	GPIO_0(2) <= keyb_enable_n;
+	GPIO_0(3) <= sys_via_testout(6); -- timer 1
 	
 	-- CRTC drives video out (CSYNC on HSYNC output, VSYNC high)
 	VGA_HS <= not (crtc_hsync xor crtc_vsync);
@@ -880,13 +996,35 @@ begin
 	VGA_B <= b_out & b_out & b_out & b_out;
 	
 	-- Connections to System VIA
+	-- ADC
+	sys_via_cb1_in <= '1'; -- /EOC
+	-- CRTC
 	sys_via_ca1_in <= crtc_vsync;
-	sys_via_ca2_in <= '0'; -- Keyboard interrupt
-	sys_via_cb1_in <= '0'; -- /EOC
 	sys_via_cb2_in <= crtc_lpstb;
+	-- Keyboard
+	sys_via_ca2_in <= keyb_int;
+	sys_via_pa_in(7) <= keyb_out;
+	keyb_column <= sys_via_pa_out(3 downto 0);
+	keyb_row <= sys_via_pa_out(6 downto 4);
+	-- Others (idle until missing bits implemented)
+	sys_via_pa_in(6 downto 0) <= (others => '0');
+	sys_via_pb_in(7 downto 4) <= (others => '1');
 	
 	-- Connections to User VIA (user port is output on green LEDs)
-	LEDG <= user_via_pb_out;
+	--LEDG <= user_via_pb_out;
+	LEDG <= sys_via_testout;
+	
+	-- ROM select latch
+	process(clock,reset_n)
+	begin
+		if reset_n = '0' then
+			romsel <= (others => '0');
+		elsif rising_edge(clock) then
+			if romsel_enable = '1' and cpu_r_nw = '0' then
+				romsel <= cpu_do(3 downto 0);
+			end if;
+		end if;
+	end process;
 	
 	-- IC32 latch
 	sound_enable_n <= ic32(0);
@@ -912,28 +1050,5 @@ begin
 	-- Keyboard LEDs
 	LEDR(0) <= not caps_lock_led_n;
 	LEDR(1) <= not shift_lock_led_n;
-	
-	-- Hack for jumper links
-	process(sys_via_pa_out)
-	begin
-		sys_via_pa_in <= sys_via_pa_out;
-		
-		if sys_via_pa_out(6 downto 4) = "000" then
-			case to_integer(unsigned(sys_via_pa_out(3 downto 0))) is
-			when 2 => sys_via_pa_in(7) <= SW(7);
-			when 3 => sys_via_pa_in(7) <= SW(6);
-			when 4 => sys_via_pa_in(7) <= SW(5);
-			when 5 => sys_via_pa_in(7) <= SW(4);
-			when 6 => sys_via_pa_in(7) <= SW(3);
-			when 7 => sys_via_pa_in(7) <= SW(2);
-			when 8 => sys_via_pa_in(7) <= SW(1);
-			when 9 => sys_via_pa_in(7) <= SW(0);
-			when others => sys_via_pa_in(7) <= '0';
-			end case;
-		else
-			-- 'W' output of keyboard IC2 is inverse data, so 0 is no key pressed
-			sys_via_pa_in(7) <= '0';
-		end if;
-	end process;
-		
+
 end architecture;
