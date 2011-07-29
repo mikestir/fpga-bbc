@@ -168,7 +168,7 @@ begin
 	process(CLOCK,nRESET)
 	begin
 		if nRESET = '0' then
-			watchpoint <= (others => '0');
+			watchpoint <= (others => '1');
 		elsif rising_edge(CLOCK) and mode = modeWatch then
 			if r_set_n = '1' and nSET = '0' then
 				-- Increment selected digit on each button press
@@ -187,7 +187,7 @@ begin
 	process(CLOCK,nRESET)
 	begin
 		if nRESET = '0' then
-			breakpoint <= (others => '0');
+			breakpoint <= (others => '1');
 		elsif rising_edge(CLOCK) and mode = modeBreak then
 			if r_set_n = '1' and nSET = '0' then
 				-- Increment selected digit on each button press

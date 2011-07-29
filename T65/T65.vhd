@@ -182,7 +182,7 @@ begin
 	XF <= XF_i;
 	ML_n <= '0' when IR(7 downto 6) /= "10" and IR(2 downto 1) = "11" and MCycle(2 downto 1) /= "00" else '1';
 	VP_n <= '0' when IRQCycle = '1' and (MCycle = "101" or MCycle = "110") else '1';
-	VDA <= '1' when Set_Addr_To_r /= "000" else '0';            -- Incorrect !!!!!!!!!!!!
+	VDA <= '1' when Set_Addr_To_r /= "00" else '0';             -- Incorrect !!!!!!!!!!!!
 	VPA <= '1' when Jump(1) = '0' else '0';                     -- Incorrect !!!!!!!!!!!!
 
 	mcode : T65_MCode
@@ -370,13 +370,26 @@ begin
 					when others =>
 					end case;
 				end if;
-				if IR = "00000000" and MCycle = "011" and RstCycle = '0' and NMICycle = '0' and IRQCycle = '0' then
-					P(Flag_B) <= '1';
+
+				--if IR = "00000000" and MCycle = "011" and RstCycle = '0' and NMICycle = '0' and IRQCycle = '0' then
+				--	P(Flag_B) <= '1';
+				--end if;
+				--if IR = "00000000" and MCycle = "100" and RstCycle = '0' and (NMICycle = '1' or IRQCycle = '1')  then
+				--	P(Flag_I) <= '1';
+				--	P(Flag_B) <= B_o;
+				--end if;
+
+        -- B=1 always on the 6502
+				P(Flag_B) <= '1';
+				if IR = "00000000" and RstCycle = '0' and (NMICycle = '1' or IRQCycle = '1') then
+          if MCycle = "011" then
+            -- B=0 in *copy* of P pushed onto the stack
+            P(Flag_B) <= '0';
+          elsif MCycle = "100" then
+            P(Flag_I) <= '1';
+          end if;
 				end if;
-				if IR = "00000000" and MCycle = "100" and RstCycle = '0' and (NMICycle = '1' or IRQCycle = '1')  then
-					P(Flag_I) <= '1';
-					P(Flag_B) <= B_o;
-				end if;
+
 				if SO_n_o = '1' and SO_n = '0' then
 					P(Flag_V) <= '1';
 				end if;
