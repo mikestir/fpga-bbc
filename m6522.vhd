@@ -90,8 +90,7 @@ entity M6522 is
     I_P2_H            : in    std_logic; -- high for phase 2 clock  ____----__
     RESET_L           : in    std_logic;
     ENA_4             : in    std_logic; -- clk enable
-    CLK               : in    std_logic;
-    testout : out std_logic_vector(7 downto 0)
+    CLK               : in    std_logic
     );
 end;
 
@@ -192,8 +191,6 @@ architecture RTL of M6522 is
 
   signal final_irq         : std_logic;
 begin
-	testout <= r_ifr and "1" & r_ier;
-
   p_phase : process
   begin
     -- internal clock phase

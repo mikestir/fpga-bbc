@@ -21,11 +21,18 @@ port (
 	CLKEN_IN	:	in	std_logic;
 	-- Gated clock enable back out to CPU
 	CLKEN_OUT	:	out	std_logic;
+	-- CPU IRQ in
+	nIRQ_IN		:	in	std_logic;
+	-- Gated IRQ back out to CPU (no interrupts when single stepping)
+	nIRQ_OUT	:	out	std_logic;
 	
 	-- CPU
 	A_CPU		:	in	std_logic_vector(15 downto 0);
 	R_nW		:	in	std_logic;
 	SYNC		:	in	std_logic;
+	
+	-- Aux bus input for display in hex
+	AUX_BUS		:	in	std_logic_vector(15 downto 0);
 	
 	-- Controls
 	-- RUN or HALT CPU
@@ -60,7 +67,7 @@ port (
 end component;
 
 -- Current display mode
-type mode_t is (modeAddress,modeBreak,modeWatch);
+type mode_t is (modeAddress,modeBreak,modeWatch,modeAux);
 signal mode			:	mode_t;
 -- Current edit digit
 signal digit		:	unsigned(1 downto 0);
@@ -95,11 +102,14 @@ signal r_set_n		:	std_logic;
 begin
 	-- Mask CPU clock enable
 	CLKEN_OUT <= CLKEN_IN and not halt;
+	-- Mask interrupt
+	nIRQ_OUT <= nIRQ_IN or not RUN;
 	
 	-- Route selected address to display
 	a_display <= instr_addr when mode = modeAddress else
 		breakpoint when mode = modeBreak else
 		watchpoint when mode = modeWatch else
+		AUX_BUS when mode = modeAux else
 		(others => '0');
 
 	-- Generate display digits from binary
@@ -109,14 +119,14 @@ begin
 	d0 : seg7 port map (a_display(3 downto 0),d0_display);
 	
 	-- Flash selected digit in edit modes
-	DIGIT3 <= d3_display when (mode = modeAddress or flash = '1' or digit /= "11") else "1111111";
-	DIGIT2 <= d2_display when (mode = modeAddress or flash = '1' or digit /= "10") else "1111111";
-	DIGIT1 <= d1_display when (mode = modeAddress or flash = '1' or digit /= "01") else "1111111";
-	DIGIT0 <= d0_display when (mode = modeAddress or flash = '1' or digit /= "00") else "1111111";
+	DIGIT3 <= d3_display when (mode = modeAddress or mode = modeAux or flash = '1' or digit /= "11") else "1111111";
+	DIGIT2 <= d2_display when (mode = modeAddress or mode = modeAux or flash = '1' or digit /= "10") else "1111111";
+	DIGIT1 <= d1_display when (mode = modeAddress or mode = modeAux or flash = '1' or digit /= "01") else "1111111";
+	DIGIT0 <= d0_display when (mode = modeAddress or mode = modeAux or flash = '1' or digit /= "00") else "1111111";
 	
 	-- Show mode on LEDs
-	LED_BREAKPOINT <= '1' when mode = modeBreak else '0';
-	LED_WATCHPOINT <= '1' when mode = modeWatch else '0';
+	LED_BREAKPOINT <= '1' when mode = modeBreak or mode = modeAux else '0';
+	LED_WATCHPOINT <= '1' when mode = modeWatch or mode = modeAux else '0';
 
 	-- Flash counter
 	process(CLOCK,nRESET)
@@ -153,6 +163,8 @@ begin
 					mode <= modeBreak;
 				elsif mode = modeBreak then
 					mode <= modeWatch;
+				elsif mode = modeWatch then
+					mode <= modeAux;
 				else
 					mode <= modeAddress;
 				end if;
@@ -215,6 +227,11 @@ begin
 			-- Register single-step button
 			r_step_n <= nSTEP;
 			
+			-- Once the CPU has run we can trigger a new halt
+			if CLKEN_IN = '1' then
+				resuming <= '0';
+			end if;
+			
 			if SYNC = '1' then
 				-- Latch address of instruction fetch
 				instr_addr <= A_CPU;
@@ -241,11 +258,6 @@ begin
 			if r_step_n = '1' and nSTEP = '0' then
 				resuming <= '1';
 				halt <= '0';
-			end if;
-			
-			-- Once the CPU has run we can trigger a new halt
-			if CLKEN_IN = '1' then
-				resuming <= '0';
 			end if;
 		end if;
 	end process;

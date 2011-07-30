@@ -310,8 +310,7 @@ component M6522 is
     I_P2_H            : in    std_logic; -- high for phase 2 clock  ____----__
     RESET_L           : in    std_logic;
     ENA_4             : in    std_logic; -- clk enable (4x system clock rate)
-    CLK               : in    std_logic;
-    testout : out std_logic_vector(7 downto 0)
+    CLK               : in    std_logic
     );
 end component;
 
@@ -361,11 +360,18 @@ port (
 	CLKEN_IN	:	in	std_logic;
 	-- Gated clock enable back out to CPU
 	CLKEN_OUT	:	out	std_logic;
+	-- CPU IRQ in
+	nIRQ_IN		:	in	std_logic;
+	-- Gated IRQ back out to CPU (no interrupts when single stepping)
+	nIRQ_OUT	:	out	std_logic;
 	
 	-- CPU
 	A_CPU		:	in	std_logic_vector(15 downto 0);
 	R_nW		:	in	std_logic;
 	SYNC		:	in	std_logic;
+	
+	-- Aux bus input for display in hex
+	AUX_BUS		:	in	std_logic_vector(15 downto 0);	
 	
 	-- Controls
 	-- RUN or HALT CPU
@@ -417,6 +423,10 @@ signal mhz1_clken		:	std_logic; -- 1 MHz bus and associated peripherals, 6522 ph
 
 -- Testing
 signal test_uart_do		:	std_logic_vector(7 downto 0);
+
+-- Debugger connections
+signal debug_irq_in_n	:	std_logic;
+signal debug_aux		:	std_logic_vector(15 downto 0);
 
 -- CPU signals
 signal cpu_mode			:	std_logic_vector(1 downto 0);
@@ -485,7 +495,6 @@ signal sys_via_cb2_oe_n	:	std_logic;
 signal sys_via_pb_in	:	std_logic_vector(7 downto 0);
 signal sys_via_pb_out	:	std_logic_vector(7 downto 0);
 signal sys_via_pb_oe_n	:	std_logic_vector(7 downto 0);
-signal sys_via_testout	:	std_logic_vector(7 downto 0);
 
 -- User VIA signals
 signal user_via_do		:	std_logic_vector(7 downto 0);
@@ -507,7 +516,6 @@ signal user_via_cb2_oe_n	:	std_logic;
 signal user_via_pb_in	:	std_logic_vector(7 downto 0);
 signal user_via_pb_out	:	std_logic_vector(7 downto 0);
 signal user_via_pb_oe_n	:	std_logic_vector(7 downto 0);
-signal user_via_testout	:	std_logic_vector(7 downto 0);
 
 -- IC32 latch on System VIA
 signal ic32				:	std_logic_vector(7 downto 0);
@@ -570,7 +578,10 @@ begin
 		hard_reset_n,
 		cpu_clken,
 		cpu_debug_clken,
+		debug_irq_in_n,
+		cpu_irq_n,
 		cpu_a(15 downto 0), cpu_r_nw, cpu_sync,
+		debug_aux,
 		SW(8), -- RUN
 		KEY(3), -- STEP
 		KEY(2), -- MODE
@@ -689,7 +700,7 @@ begin
 		mhz1_clken,
 		hard_reset_n, -- System VIA is reset by power on reset only
 		mhz4_clken,
-		clock, sys_via_testout
+		clock
 		);
 	
 	-- User VIA
@@ -721,7 +732,7 @@ begin
 		mhz1_clken,
 		reset_n,
 		mhz4_clken,
-		clock, user_via_testout
+		clock
 		);
 		
 	-- Keyboard
@@ -887,8 +898,8 @@ begin
 		user_via_do	when user_via_enable = '1' else
 		test_uart_do when io_fred = '1' else
 		(others => '0'); -- un-decoded locations are pulled down by RP1
-	cpu_irq_n <= sys_via_irq_n; -- and user_via_irq_n;
-	--cpu_irq_n <= '1';
+	debug_irq_in_n <= sys_via_irq_n and user_via_irq_n; -- route IRQ through debugger
+	--cpu_irq_n <= sys_via_irq_n and user_via_irq_n;
 	
 	-- ROMs are in external flash
 	FL_RST_N <= reset_n;
@@ -900,10 +911,9 @@ begin
 	FL_ADDR(15 downto 14) <= 
 		"00" when mos_enable = '1' else
 		"01" when rom_enable = '1' and romsel(1 downto 0) = "11" else	-- BASIC
-		--"10" when rom_enable = '1' and romsel(1 downto 0) = "00" else
+		"10" when rom_enable = '1' and romsel(1 downto 0) = "00" else	-- DFS
 		"11";
 		
-	
 	-- SRAM bus
 	SRAM_UB_N <= '1';
 	SRAM_LB_N <= '0';
@@ -983,11 +993,6 @@ begin
 	g_in <= '0';
 	b_in <= '0';
 	
-	GPIO_0(0) <= cpu_irq_n;
-	GPIO_0(1) <= keyb_out;
-	GPIO_0(2) <= keyb_enable_n;
-	GPIO_0(3) <= sys_via_testout(6); -- timer 1
-	
 	-- CRTC drives video out (CSYNC on HSYNC output, VSYNC high)
 	VGA_HS <= not (crtc_hsync xor crtc_vsync);
 	VGA_VS <= '1';
@@ -1004,15 +1009,15 @@ begin
 	-- Keyboard
 	sys_via_ca2_in <= keyb_int;
 	sys_via_pa_in(7) <= keyb_out;
+	sys_via_pa_in(6 downto 0) <= sys_via_pa_out(6 downto 0); -- Must loop back output pins or keyboard won't work
 	keyb_column <= sys_via_pa_out(3 downto 0);
 	keyb_row <= sys_via_pa_out(6 downto 4);
 	-- Others (idle until missing bits implemented)
-	sys_via_pa_in(6 downto 0) <= (others => '0');
 	sys_via_pb_in(7 downto 4) <= (others => '1');
 	
 	-- Connections to User VIA (user port is output on green LEDs)
-	--LEDG <= user_via_pb_out;
-	LEDG <= sys_via_testout;
+	user_via_ca1_in <= '1'; -- Pulled up
+	LEDG <= user_via_pb_out;
 	
 	-- ROM select latch
 	process(clock,reset_n)
@@ -1050,5 +1055,13 @@ begin
 	-- Keyboard LEDs
 	LEDR(0) <= not caps_lock_led_n;
 	LEDR(1) <= not shift_lock_led_n;
+	
+	-----------------
+	-- DEBUG STUFF
+	-----------------
+	
+	GPIO_0(0) <= cpu_irq_n;
+	GPIO_0(1) <= keyb_out;
+	GPIO_0(2) <= keyb_enable_n;
 
 end architecture;

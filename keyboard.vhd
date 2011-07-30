@@ -63,7 +63,7 @@ signal keyb_valid	:	std_logic;
 signal keyb_error	:	std_logic;
 
 -- Internal signals
-type key_matrix is array(0 to 9) of std_logic_vector(7 downto 0);
+type key_matrix is array(0 to 15) of std_logic_vector(7 downto 0);
 signal keys			:	key_matrix;
 signal col			:	unsigned(3 downto 0);
 signal release		:	std_logic;
@@ -133,6 +133,13 @@ begin
 			keys(7) <= (others => '0');
 			keys(8) <= (others => '0');
 			keys(9) <= (others => '0');
+			-- These non-existent rows are used in the BBC master
+			keys(10) <= (others => '0');
+			keys(11) <= (others => '0');
+			keys(12) <= (others => '0');
+			keys(13) <= (others => '0');
+			keys(14) <= (others => '0');
+			keys(15) <= (others => '0');
 		elsif rising_edge(CLOCK) then
 			-- Copy DIP switches through to row 0
 			keys(2)(0) <= DIP_SWITCH(7);

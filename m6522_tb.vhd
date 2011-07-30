@@ -46,8 +46,7 @@ component M6522 is
     I_P2_H            : in    std_logic; -- high for phase 2 clock  ____----__
     RESET_L           : in    std_logic;
     ENA_4             : in    std_logic; -- clk enable
-    CLK               : in    std_logic;
-    testout		: out std_logic_vector(7 downto 0)
+    CLK               : in    std_logic
     );
 end component;
 
@@ -81,8 +80,6 @@ signal n_reset	:	std_logic := '0';
 signal clken	:	std_logic := '0';
 signal clock	:	std_logic := '0';
 
-signal testout : std_logic_vector(7 downto 0);
-
 begin
 
 	uut: m6522 port map (
@@ -93,7 +90,7 @@ begin
 		cb1_in, cb1_out, n_cb1_oe,
 		cb2_in, cb2_out, n_cb2_oe,
 		pb_in, pb_out, n_pb_oe,
-		phase2, n_reset, clken, clock, testout
+		phase2, n_reset, clken, clock
 		);
 		
 	clock <= not clock after 125 ns; -- 4x 1 MHz
