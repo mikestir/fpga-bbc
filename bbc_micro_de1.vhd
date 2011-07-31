@@ -353,6 +353,94 @@ port (
 	);
 end component;
 
+-----------------------------
+-- SN76489 sound generator
+-----------------------------
+
+component sn76489_top is
+
+  generic (
+    clock_div_16_g : integer := 1
+  );
+  port (
+    clock_i    : in  std_logic;
+    clock_en_i : in  std_logic;
+    res_n_i    : in  std_logic;
+    ce_n_i     : in  std_logic;
+    we_n_i     : in  std_logic;
+    ready_o    : out std_logic;
+    d_i        : in  std_logic_vector(0 to 7);
+    aout_o     : out signed(0 to 7)
+  );
+
+end component;
+
+component i2s_intf is
+generic(
+	mclk_rate : positive := 12000000;
+	sample_rate : positive := 8000;
+	preamble : positive := 1; -- I2S
+	word_length : positive := 16
+	);
+
+port (
+	-- 2x MCLK in (e.g. 24 MHz for WM8731 USB mode)
+	CLK			:	in	std_logic;
+	nRESET		:	in	std_logic;
+	
+	-- Parallel IO
+	PCM_INL		:	out	std_logic_vector(word_length - 1 downto 0);
+	PCM_INR		:	out	std_logic_vector(word_length - 1 downto 0);
+	PCM_OUTL	:	in	std_logic_vector(word_length - 1 downto 0);
+	PCM_OUTR	:	in	std_logic_vector(word_length - 1 downto 0);
+	
+	-- Codec interface (right justified mode)
+	-- MCLK is generated at half of the CLK input
+	I2S_MCLK	:	out	std_logic;
+	-- LRCLK is equal to the sample rate and is synchronous to
+	-- MCLK.  It must be related to MCLK by the oversampling ratio
+	-- given in the codec datasheet.
+	I2S_LRCLK	:	out	std_logic;
+	
+	-- Data is shifted out on the falling edge of BCLK, sampled
+	-- on the rising edge.  The bit rate is determined such that
+	-- it is fast enough to fit preamble + word_length bits into
+	-- each LRCLK half cycle.  The last cycle of each word may be 
+	-- stretched to fit to LRCLK.  This is OK at least for the 
+	-- WM8731 codec.
+	-- The first falling edge of each timeslot is always synchronised
+	-- with the LRCLK edge.
+	I2S_BCLK	:	out	std_logic;
+	-- Output bitstream
+	I2S_DOUT	:	out	std_logic;
+	-- Input bitstream
+	I2S_DIN		:	in	std_logic
+	);
+end component;
+
+component i2c_loader is
+generic (
+	-- Address of slave to be loaded
+	device_address : integer := 16#1a#;
+	-- Number of retries to allow before stopping
+	num_retries : integer := 0;
+	-- Length of clock divider in bits.  Resulting bus frequency is
+	-- CLK/2^(log2_divider + 2)
+	log2_divider : integer := 6
+);
+
+port (
+	CLK			:	in	std_logic;
+	nRESET		:	in	std_logic;
+	
+	I2C_SCL		:	inout	std_logic;
+	I2C_SDA		:	inout	std_logic;
+	
+	IS_DONE		:	out std_logic;
+	IS_ERROR	:	out	std_logic
+	);
+end component;
+
 component debugger is
 generic (
 	-- Set this for a reasonable half flash duration relative to the
@@ -539,6 +627,13 @@ signal keyb_row			:	std_logic_vector(2 downto 0);
 signal keyb_out			:	std_logic;
 signal keyb_int			:	std_logic;
 signal keyb_break		:	std_logic;
+
+-- Sound generator
+signal sound_ready		:	std_logic;
+signal sound_di			:	std_logic_vector(7 downto 0);
+signal sound_ao			:	signed(7 downto 0);
+signal pcm_inl			:	std_logic_vector(15 downto 0);
+signal pcm_inr			:	std_logic_vector(15 downto 0);
 
 -- Memory enables
 signal ram_enable		:	std_logic;		-- 0x0000
@@ -752,6 +847,32 @@ begin
 		keyb_int,
 		keyb_break,
 		SW(7 downto 0)
+		);
+		
+	-- Sound generator (and drive logic for I2S codec)
+	sound : sn76489_top port map (
+		clock, mhz4_clken,
+		reset_n, '0', sound_enable_n,
+		sound_ready, sound_di,
+		sound_ao
+		);
+	i2s : i2s_intf port map (
+		CLOCK_24(0), reset_n,
+		pcm_inl, pcm_inr,
+		std_logic_vector(sound_ao) & "00000000",
+		std_logic_vector(sound_ao) & "00000000",
+		AUD_XCK, AUD_DACLRCK,
+		AUD_BCLK, AUD_DACDAT, AUD_ADCDAT
+		);
+	i2c : i2c_loader 
+		generic map (
+			log2_divider => 7
+		)
+		port map (
+			clock, reset_n,
+			I2C_SCLK, I2C_SDAT,
+			LEDR(5), -- IS_DONE
+			LEDR(4) -- IS_ERROR
 		);
 	
 	-- Asynchronous reset
@@ -1018,6 +1139,8 @@ begin
 	sys_via_pa_in(6 downto 0) <= sys_via_pa_out(6 downto 0); -- Must loop back output pins or keyboard won't work
 	keyb_column <= sys_via_pa_out(3 downto 0);
 	keyb_row <= sys_via_pa_out(6 downto 4);
+	-- Sound
+	sound_di <= sys_via_pa_out;
 	-- Others (idle until missing bits implemented)
 	sys_via_pb_in(7 downto 4) <= (others => '1');
 	

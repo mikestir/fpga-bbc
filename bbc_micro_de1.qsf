@@ -501,6 +501,23 @@ set_global_assignment -name LL_MEMBER_STATE LOCKED -section_id "Root Region"
 set_global_assignment -name MISC_FILE "U:/git_repos/fpga/bbc/bbc_micro_de1.dpf"
 set_location_assignment PIN_AB15 -to FL_CE_N
 set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "3.3-V LVTTL"
+set_global_assignment -name USE_CONFIGURATION_DEVICE ON
+set_global_assignment -name STRATIX_CONFIGURATION_DEVICE EPCS4
+set_global_assignment -name RESERVE_ASDO_AFTER_CONFIGURATION "AS INPUT TRI-STATED"
+set_global_assignment -name CYCLONEII_RESERVE_NCEO_AFTER_CONFIGURATION "USE AS REGULAR IO"
+set_location_assignment PIN_U20 -to SD_nCS
+set_location_assignment PIN_V20 -to SD_SCLK
+set_location_assignment PIN_Y20 -to SD_MOSI
+set_location_assignment PIN_W20 -to SD_MISO
+set_global_assignment -name VHDL_FILE i2s_intf.vhd
+set_global_assignment -name VHDL_FILE i2c_loader.vhd
+set_global_assignment -name VHDL_FILE "sn76489-1.0/sn76489_comp_pack-p.vhd"
+set_global_assignment -name VHDL_FILE "sn76489-1.0/sn76489_noise.vhd"
+set_global_assignment -name VHDL_FILE "sn76489-1.0/sn76489_tone.vhd"
+set_global_assignment -name VHDL_FILE "sn76489-1.0/sn76489_top.vhd"
+set_global_assignment -name VHDL_FILE "sn76489-1.0/sn76489_attenuator.vhd"
+set_global_assignment -name VHDL_FILE "sn76489-1.0/sn76489_clock_div.vhd"
+set_global_assignment -name VHDL_FILE "sn76489-1.0/sn76489_latch_ctrl.vhd"
 set_global_assignment -name VHDL_FILE ps2_intf.vhd
 set_global_assignment -name VHDL_FILE simple_uart.vhd
 set_global_assignment -name VHDL_FILE m6522.vhd
@@ -519,12 +536,4 @@ set_global_assignment -name QIP_FILE ehbasic.qip
 set_global_assignment -name VHDL_FILE m6522_tb.vhd
 set_global_assignment -name VHDL_FILE keyboard.vhd
 set_global_assignment -name VHDL_FILE debugger.vhd
-set_global_assignment -name USE_CONFIGURATION_DEVICE ON
-set_global_assignment -name STRATIX_CONFIGURATION_DEVICE EPCS4
-set_global_assignment -name RESERVE_ASDO_AFTER_CONFIGURATION "AS INPUT TRI-STATED"
-set_global_assignment -name CYCLONEII_RESERVE_NCEO_AFTER_CONFIGURATION "USE AS REGULAR IO"
-set_location_assignment PIN_U20 -to SD_nCS
-set_location_assignment PIN_V20 -to SD_SCLK
-set_location_assignment PIN_Y20 -to SD_MOSI
-set_location_assignment PIN_W20 -to SD_MISO
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top

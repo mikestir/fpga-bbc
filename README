@@ -1,2 +1,6 @@
-T65 implementation from http://www.fpgaarcade.com/resources/T65_v302.zip
+T65 implementation from http://www.fpgaarcade.com/resources/T65_v302.zip (bug fixes from PACE dev)
+M6522 implementation from FPGA arcade VIC20 design.  Various bug fixes added locally.
+SN76489 implementation by Arnim Laeuger and obtained from FPGA arcade
+
+
 
