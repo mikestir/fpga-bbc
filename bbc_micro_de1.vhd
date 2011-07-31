@@ -90,6 +90,12 @@ port (
 	FL_WE_N		:	out		std_logic;
 	FL_CE_N		:	out		std_logic;
 	
+	-- SD card (SPI mode)
+	SD_nCS		:	out		std_logic;
+	SD_MOSI		:	out		std_logic;
+	SD_SCLK		:	out		std_logic;
+	SD_MISO		:	in		std_logic;
+	
 	-- GPIO
 	GPIO_0		:	inout	std_logic_vector(35 downto 0);
 	GPIO_1		:	inout	std_logic_vector(35 downto 0)
@@ -912,7 +918,7 @@ begin
 		"00" when mos_enable = '1' else
 		"01" when rom_enable = '1' and romsel(1 downto 0) = "11" else	-- BASIC
 		"10" when rom_enable = '1' and romsel(1 downto 0) = "00" else	-- DFS
-		"11";
+		"11"; -- MMC ROM
 		
 	-- SRAM bus
 	SRAM_UB_N <= '1';
@@ -1017,7 +1023,15 @@ begin
 	
 	-- Connections to User VIA (user port is output on green LEDs)
 	user_via_ca1_in <= '1'; -- Pulled up
-	LEDG <= user_via_pb_out;
+	--LEDG <= user_via_pb_out;
+	
+	-- MMBEEB
+	user_via_cb1_in <= user_via_pb_out(1);
+	SD_SCLK <= user_via_pb_out(1); -- SCLK
+	SD_MOSI <= user_via_pb_out(0); -- SDO
+	SD_nCS <= '0'; -- CS
+	user_via_cb2_in <= SD_MISO; -- SDI
+	user_via_pb_in <= user_via_pb_out;
 	
 	-- ROM select latch
 	process(clock,reset_n)
@@ -1060,8 +1074,8 @@ begin
 	-- DEBUG STUFF
 	-----------------
 	
-	GPIO_0(0) <= cpu_irq_n;
-	GPIO_0(1) <= keyb_out;
-	GPIO_0(2) <= keyb_enable_n;
+	GPIO_0(0) <= user_via_pb_out(1); --clk
+	GPIO_0(1) <= user_via_pb_out(0); --do
+	GPIO_0(2) <= SD_MISO; -- di
 
 end architecture;

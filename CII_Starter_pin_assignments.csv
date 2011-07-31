@@ -448,3 +448,8 @@ From,To,Assignment Name,Value,Enabled
 ,SRAM_OE_N,Location,PIN_T8,Yes
 ,SRAM_UB_N,Location,PIN_W7,Yes
 ,SRAM_WE_N,Location,PIN_AA10,Yes
+,SD_nCS,Location,PIN_U20,Yes
+,SD_MOSI,Location,PIN_Y20,Yes
+,SD_SCLK,Location,PIN_V20,Yes
+,SD_MISO,Location,PIN_W20,Yes
+

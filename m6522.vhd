@@ -733,7 +733,7 @@ begin
         free_run := '0';
 
         case r_acr(4 downto 2) is
-          when "000" => ena := '0';
+          when "000" => ena := '0'; cb1_ip := '1';
           when "001" => ena := '1'; cb1_op := '1'; use_t2 := '1';
           when "010" => ena := '1'; cb1_op := '1';
           when "011" => ena := '1'; cb1_ip := '1';
@@ -745,35 +745,31 @@ begin
         end case;
 
         -- clock select
-        if (ena = '0') then
-          sr_strobe <= '1';
-        else
-          if (cb1_ip = '1') then
-            sr_strobe <= I_CB1;
-          else
-            if (sr_cnt(3) = '0') and (free_run = '0') then
-              sr_strobe <= '1';
-            else
-              if ((use_t2 = '1') and t2_sr_ena) or
-                 ((use_t2 = '0') and (phase = "00")) then
-                  sr_strobe <= not sr_strobe;
-              end if;
-            end if;
-          end if;
-        end if;
+        -- SR still runs even in disabled mode (on rising edge of CB1).  It
+        -- just doesn't generate any interrupts.
+        -- Ref BBC micro advanced user guide p409
+		if (cb1_ip = '1') then
+		  sr_strobe <= I_CB1;
+		else
+		  if (sr_cnt(3) = '0') and (free_run = '0') then
+		    sr_strobe <= '1';
+		  else
+			if ((use_t2 = '1') and t2_sr_ena) or
+			  ((use_t2 = '0') and (phase = "00")) then
+			    sr_strobe <= not sr_strobe;
+			end if;
+		  end if;
+		end if;
 
         -- latch on rising edge, shift on falling edge
         if sr_write_ena then
           r_sr <= load_data;
-        elsif (ena = '1') then -- use shift reg
-
+        else
           if (dir_out = '0') then
             -- input
             if (sr_cnt(3) = '1') or (cb1_ip = '1') then
               if sr_strobe_rising then
-                r_sr(0) <= I_CB2;
-              elsif sr_strobe_falling then
-                r_sr(7 downto 1) <= r_sr(6 downto 0);
+                r_sr <= r_sr(6 downto 0) & I_CB2;
               end if;
             end if;
             sr_out <= '1';

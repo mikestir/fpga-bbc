@@ -519,4 +519,12 @@ set_global_assignment -name QIP_FILE ehbasic.qip
 set_global_assignment -name VHDL_FILE m6522_tb.vhd
 set_global_assignment -name VHDL_FILE keyboard.vhd
 set_global_assignment -name VHDL_FILE debugger.vhd
+set_global_assignment -name USE_CONFIGURATION_DEVICE ON
+set_global_assignment -name STRATIX_CONFIGURATION_DEVICE EPCS4
+set_global_assignment -name RESERVE_ASDO_AFTER_CONFIGURATION "AS INPUT TRI-STATED"
+set_global_assignment -name CYCLONEII_RESERVE_NCEO_AFTER_CONFIGURATION "USE AS REGULAR IO"
+set_location_assignment PIN_U20 -to SD_nCS
+set_location_assignment PIN_V20 -to SD_SCLK
+set_location_assignment PIN_Y20 -to SD_MOSI
+set_location_assignment PIN_W20 -to SD_MISO
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
