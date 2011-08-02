@@ -197,6 +197,7 @@ begin
 	-- Horizontal, vertical and address counters
 	process(CLOCK,nRESET)
 	variable ma_row_start : unsigned(13 downto 0);
+	variable max_scan_line : unsigned(4 downto 0);
 	begin
 		if nRESET = '0' then
 			-- H
@@ -220,8 +221,16 @@ begin
 				-- h_total reached
 				h_counter <= (others => '0');
 				
+				-- In interlace sync + video mode mask off the LSb of the
+				-- max scan line address
+				if r08_interlace(1 downto 0) = "11" then
+					max_scan_line := r09_max_scan_line_addr(4 downto 1) & "0";
+				else
+					max_scan_line := r09_max_scan_line_addr;
+				end if;
+				
 				-- Scan line counter increments, wrapping at max_scan_line_addr
-				if line_counter = r09_max_scan_line_addr then
+				if line_counter = max_scan_line then
 					-- Next character row
 					-- FIXME: No support for v_total_adj yet
 					line_counter <= (others => '0');
@@ -250,8 +259,12 @@ begin
 						row_counter <= row_counter + 1;
 					end if;
 				else
-					-- Next scan line
-					line_counter <= line_counter + 1;
+					-- Next scan line.  Count in twos in interlaced sync+video mode
+					if r08_interlace = "11" then
+						line_counter <= line_counter + 2;
+					else
+						line_counter <= line_counter + 1;
+					end if;
 				end if;
 				
 				-- Memory address preset to row start at the beginning of each
@@ -350,15 +363,23 @@ begin
 	
 	-- Address generation
 	process(CLOCK,nRESET)
+	variable slv_line : std_logic_vector(4 downto 0);
 	begin
 		if nRESET = '0' then
 			RA <= (others => '0');
 			MA <= (others => '0');
 		elsif rising_edge(CLOCK) and CLKEN = '1' then
+			slv_line := std_logic_vector(line_counter);
+		
 			-- Character row address is just the scan line counter delayed by
 			-- one clock to line up with the syncs.
-			-- FIXME: Interlace sync + video mode needs special row addressing
-			RA <= std_logic_vector(line_counter);
+			if r08_interlace = "11" then
+				-- In interlace sync and video mode the LSb is determined by the
+				-- field number.  The line counter counts up in 2s in this case.
+				RA <= slv_line(4 downto 1) & (slv_line(0) or odd_field);
+			else
+				RA <= slv_line;
+			end if;
 			-- Internal memory address delayed by one cycle as well
 			MA <= std_logic_vector(ma_i);
 		end if;

@@ -509,6 +509,7 @@ set_location_assignment PIN_U20 -to SD_nCS
 set_location_assignment PIN_V20 -to SD_SCLK
 set_location_assignment PIN_Y20 -to SD_MOSI
 set_location_assignment PIN_W20 -to SD_MISO
+set_global_assignment -name VHDL_FILE saa5050.vhd
 set_global_assignment -name VHDL_FILE i2s_intf.vhd
 set_global_assignment -name VHDL_FILE i2c_loader.vhd
 set_global_assignment -name VHDL_FILE "sn76489-1.0/sn76489_comp_pack-p.vhd"

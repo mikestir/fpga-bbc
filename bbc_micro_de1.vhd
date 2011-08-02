@@ -559,6 +559,7 @@ signal display_a		:	std_logic_vector(14 downto 0);
 
 -- "VIDPROC" signals
 signal vidproc_invert_n	:	std_logic;
+signal vidproc_disen	:	std_logic;
 signal r_in				:	std_logic;
 signal g_in				:	std_logic;
 signal b_in				:	std_logic;
@@ -757,7 +758,7 @@ begin
 		cpu_do,
 		SRAM_DQ(7 downto 0),
 		vidproc_invert_n,
-		crtc_de,
+		vidproc_disen,
 		crtc_cursor,
 		r_in, g_in, b_in,
 		r_out, g_out, b_out
@@ -1116,6 +1117,7 @@ begin
 	
 	-- VIDPROC
 	vidproc_invert_n <= '1';
+	vidproc_disen <= crtc_de and not crtc_ra(3); -- DISEN is masked off by RA(3) for MODEs 3 and 6
 	r_in <= '0'; -- FIXME: From SAA5050
 	g_in <= '0';
 	b_in <= '0';
