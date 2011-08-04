@@ -65,6 +65,13 @@ signal delayed_disen	:	std_logic;
 signal clken_pixel		:	std_logic;
 signal clken_counter	:	unsigned(3 downto 0);
 
+-- Cursor generation - can span up to 32 pixels
+-- Segments 0 and 1 are 8 pixels wide
+-- Segment 2 is 16 pixels wide
+signal cursor_invert	:	std_logic;
+signal cursor_active	:	std_logic;
+signal cursor_counter	:	unsigned(4 downto 0);
+
 begin
 	-- Synchronous register access, enabled on every clock
 	process(CLOCK,nRESET)
@@ -145,6 +152,38 @@ begin
 		end if;
 	end process;
 	
+	-- Cursor generation
+	cursor_invert <= cursor_active and
+		((r0_cursor0 and not (cursor_counter(4) or cursor_counter(3))) or
+		(r0_cursor1 and cursor_counter(3) and not cursor_counter(4)) or
+		(r0_cursor2 and cursor_counter(4)));
+	process(CLOCK,nRESET)
+	begin
+		if nRESET = '0' then
+			cursor_active <= '0';
+			cursor_counter <= (others => '0');
+		elsif rising_edge(CLOCK) and CLKEN = '1' then
+			if CURSOR = '1' or cursor_active = '1' then
+				-- Latch cursor
+				cursor_active <= '1';
+		
+				-- Reset on counter wrap
+				if cursor_counter = "11111" then
+					cursor_active <= '0';
+				end if;
+				
+				-- Increment counter
+				if cursor_active = '0' then
+					-- Reset
+					cursor_counter <= (others => '0');
+				else
+					-- Increment
+					cursor_counter <= cursor_counter + 1;
+				end if;
+			end if;
+		end if;
+	end process;
+	
 	-- Pixel generation
 	-- The new shift register contents are loaded during
 	-- cycle 0 (and 8) but will not be read here until the next cycle.
@@ -179,10 +218,18 @@ begin
 			blue_val := (dot_val(3) and r0_flash) xor not dot_val(2);
 		
 			-- To output
-			-- FIXME: Cursor and INVERT option, teletext
-			R <= red_val and delayed_disen;
-			G <= green_val and delayed_disen;
-			B <= blue_val and delayed_disen;
+			-- FIXME: INVERT option
+			if r0_teletext = '0' then
+				-- Cursor can extend outside the bounds of the screen, so
+				-- it is not affected by DISEN
+				R <= (red_val and delayed_disen) xor cursor_invert;
+				G <= (green_val and delayed_disen) xor cursor_invert;
+				B <= (blue_val and delayed_disen) xor cursor_invert;
+			else
+				R <= R_IN;
+				G <= G_IN;
+				B <= B_IN;
+			end if;
 			
 			-- Display enable signal delayed by one clock
 			delayed_disen <= DISEN;

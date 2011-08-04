@@ -395,7 +395,11 @@ begin
 			cursor_i <= '0';
 			cursor_line := '0';
 		elsif rising_edge(CLOCK) and CLKEN = '1' then
-			if ma_i = r14_cursor_h & r15_cursor_l then
+			if h_display = '1' and v_display = '1' and ma_i = r14_cursor_h & r15_cursor_l then
+				if line_counter = 0 then
+					-- Suppress wrap around if last line is > max scan line
+					cursor_line := '0';
+				end if;
 				if line_counter = r10_cursor_start then
 					-- First cursor scanline
 					cursor_line := '1';
