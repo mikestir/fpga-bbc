@@ -223,7 +223,7 @@ begin
 				
 				-- In interlace sync + video mode mask off the LSb of the
 				-- max scan line address
-				if r08_interlace(1 downto 0) = "11" then
+				if r08_interlace = "11" then
 					max_scan_line := r09_max_scan_line_addr(4 downto 1) & "0";
 				else
 					max_scan_line := r09_max_scan_line_addr;
@@ -253,7 +253,7 @@ begin
 						-- Increment field counter
 						field_counter <= field_counter + 1;					
 					else
-						-- On all other chracter rows within the field the row start address is
+						-- On all other character rows within the field the row start address is
 						-- increased by h_displayed and the row counter is incremented
 						ma_row_start := ma_row_start + r01_h_displayed;
 						row_counter <= row_counter + 1;
@@ -262,6 +262,7 @@ begin
 					-- Next scan line.  Count in twos in interlaced sync+video mode
 					if r08_interlace = "11" then
 						line_counter <= line_counter + 2;
+						line_counter(0) <= '0'; -- Force to even
 					else
 						line_counter <= line_counter + 1;
 					end if;
