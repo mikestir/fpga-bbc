@@ -226,9 +226,9 @@ begin
 				G <= (green_val and delayed_disen) xor cursor_invert;
 				B <= (blue_val and delayed_disen) xor cursor_invert;
 			else
-				R <= R_IN;
-				G <= G_IN;
-				B <= B_IN;
+				R <= R_IN xor cursor_invert;
+				G <= G_IN xor cursor_invert;
+				B <= B_IN xor cursor_invert;
 			end if;
 			
 			-- Display enable signal delayed by one clock
