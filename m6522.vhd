@@ -602,9 +602,9 @@ begin
   begin
       done := (t1c = x"0000");
       t1c_done <= done and (phase = "11");
-      if (phase = "11") then
+      --if (phase = "11") then
         t1_reload_counter <= done and (r_acr(6) = '1');
-      end if;
+      --end if;
   end process;
 
   p_timer1 : process
@@ -655,9 +655,9 @@ begin
   begin
       done := (t2c = x"0000");
       t2c_done <= done and (phase = "11");
-      if (phase = "11") then
+      --if (phase = "11") then
         t2_reload_counter <= done;
-      end if;
+      --end if;
   end process;
 
   p_timer2 : process
