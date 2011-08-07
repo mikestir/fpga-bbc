@@ -282,32 +282,6 @@ port (
 	);
 end component;
 
--------------
--- MOS ROM
--------------
-
-component os12 IS
-	PORT
-	(
-		address		: IN STD_LOGIC_VECTOR (13 DOWNTO 0);
-		clock		: IN STD_LOGIC ;
-		q			: OUT STD_LOGIC_VECTOR (7 DOWNTO 0)
-	);
-end component;
-
---------------
--- Test ROM
---------------
-
-component ehbasic IS
-	PORT
-	(
-		address		: IN STD_LOGIC_VECTOR (13 DOWNTO 0);
-		clock		: IN STD_LOGIC ;
-		q			: OUT STD_LOGIC_VECTOR (7 DOWNTO 0)
-	);
-end component;
-
 --------------
 -- 6522 VIA
 --------------
@@ -616,9 +590,6 @@ signal ttxt_g			:	std_logic;
 signal ttxt_b			:	std_logic;
 signal ttxt_y			:	std_logic;
 
--- MOS ROM signals
-signal mos_d			:	std_logic_vector(7 downto 0);
-
 -- System VIA signals
 signal sys_via_do		:	std_logic_vector(7 downto 0);
 signal sys_via_do_oe_n	:	std_logic;
@@ -826,15 +797,6 @@ begin
 		ttxt_lose,
 		ttxt_r, ttxt_g, ttxt_b, ttxt_y
 		);
-		
-	-- MOS ROM
-	mos : os12 port map (
-		cpu_a(13 downto 0),
-		clock,
-		mos_d );
---	test_rom : ehbasic port map (
---		cpu_a(13 downto 0),
---		clock, mos_d );
 		
 	-- System VIA
 	system_via : m6522 port map (
@@ -1094,7 +1056,7 @@ begin
 	cpu_di <=
 		SRAM_DQ(7 downto 0) when ram_enable = '1' else
 		FL_DQ		when rom_enable = '1' else
-		mos_d		when mos_enable = '1' else
+		FL_DQ		when mos_enable = '1' else
 		crtc_do		when crtc_enable = '1' else
 		"00000010"	when acia_enable = '1' else
 		sys_via_do	when sys_via_enable = '1' else
