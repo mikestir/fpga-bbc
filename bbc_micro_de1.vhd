@@ -1114,8 +1114,8 @@ begin
 	FL_ADDR(15 downto 14) <= 
 		"00" when mos_enable = '1' else
 		"01" when rom_enable = '1' and romsel(1 downto 0) = "11" else	-- BASIC
-		"10" when rom_enable = '1' and romsel(1 downto 0) = "00" else	-- DFS
-		"11"; -- MMC ROM
+		"10" when rom_enable = '1' and romsel(1 downto 0) = "00" else	-- DFS/MMC
+		"11"; -- Spare
 		
 	-- SRAM bus
 	SRAM_UB_N <= '1';

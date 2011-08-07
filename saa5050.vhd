@@ -60,20 +60,22 @@ component saa5050_rom IS
 	);
 end component;
 
--- Data input registered in the bus clock domain
+-- Register inputs in the bus clock domain
 signal di_r			:	std_logic_vector(6 downto 0);
+signal dew_r		:	std_logic;
+signal lose_r		:	std_logic;
 -- Data input registered in the pixel clock domain
 signal code			:	std_logic_vector(6 downto 0);
 signal line_addr	:	unsigned(3 downto 0);
 signal rom_address	:	std_logic_vector(11 downto 0);
 signal rom_data		:	std_logic_vector(7 downto 0);
 
--- Latched timing signals for detection of falling edges
-signal dew_r		:	std_logic;
-signal lose_r		:	std_logic;
 -- Delayed display enable derived from LOSE by delaying for one character
 signal disp_enable	:	std_logic;
-signal disp_enable_r	:	std_logic;
+-- Latched timing signals for detection of falling edges
+signal dew_latch	:	std_logic;
+signal lose_latch	:	std_logic;
+signal disp_enable_latch	:	std_logic;
 
 -- Row and column addressing is handled externally.  We just need to
 -- keep track of which of the 10 lines we are on within the character...
@@ -116,13 +118,17 @@ begin
 	-- Generate flash signal for 3:1 ratio
 	flash <= flash_counter(5) and flash_counter(4);
 		
-	-- Sync data input
+	-- Sync inputs
 	process(DI_CLOCK,nRESET)
 	begin
 		if nRESET = '0' then
 			di_r <= (others => '0');
+			dew_r <= '0';
+			lose_r <= '0';
 		elsif rising_edge(DI_CLOCK) and DI_CLKEN = '1' then
 			di_r <= DI;
+			dew_r <= DEW;
+			lose_r <= LOSE;
 		end if;
 	end process;
 	
@@ -145,43 +151,14 @@ begin
 	rom_address <= (others => '0') when (double_high = '0' and double_high2 = '1') else
 			gfx & code & std_logic_vector(line_addr);
 	
---	process(CLOCK,nRESET)
---	variable line_addr : unsigned(3 downto 0);
---	variable c : std_logic_vector(6 downto 0);
---	begin
---		-- Derive line address taking double height into account
---		if double_high = '1' then
---			line_addr := "0" & line_counter(3 downto 1);
---			if double_high2 = '1' then
---				line_addr := line_addr + 5;
---			end if;
---		else
---			line_addr := line_counter;
---		end if;
---		
---		-- If this is the second row of a double height pair and double_high
---		-- is not asserted then we fetch a blank instead (0)
---		if double_high = '0' and double_high2 = '1' then
---			c := (others => '0');
---		else
---			c := di_r;
---		end if;
---	
---		if nRESET = '0' then
---			rom_address <= (others => '0');
---		elsif rising_edge(CLOCK) and CLKEN = '1' then
---			rom_address <= gfx & c & std_logic_vector(line_addr);
---		end if;
---	end process;
-	
 	-- Character row and pixel counters
 	process(CLOCK,nRESET)
 	begin	
 		if nRESET = '0' then
-			dew_r <= '0';
-			lose_r <= '0';
+			dew_latch <= '0';
+			lose_latch <= '0';
 			disp_enable <= '0';
-			disp_enable_r <= '0';
+			disp_enable_latch <= '0';
 			double_high1 <= '0';
 			double_high2 <= '0';
 			line_counter <= (others => '0');
@@ -189,44 +166,44 @@ begin
 			flash_counter <= (others => '0');
 		elsif rising_edge(CLOCK) and CLKEN = '1' then
 			-- Register syncs for edge detection
-			dew_r <= DEW;
-			lose_r <= LOSE;
-			disp_enable_r <= disp_enable;
+			dew_latch <= dew_r;
+			lose_latch <= lose_r;
+			disp_enable_latch <= disp_enable;
 			
 			-- When first entering double-height mode start on top row
 			if double_high = '1' and double_high1 = '0' and double_high2 = '0' then
 				double_high1 <= '1';
 			end if;
 			
-			-- Rising edge of LOSE is the start of the active line
-			if LOSE = '1' and lose_r = '0' then
-				-- Reset pixel counter - small offset to make the output
-				-- line up with the cursor from the video ULA
-				pixel_counter <= "010";
+			-- Count pixels between 0 and 5
+			if pixel_counter = 5 then
+				-- Start of next character and delayed display enable
+				pixel_counter <= (others => '0');
+				disp_enable <= lose_latch;
 			else
-				-- Count pixels between 0 and 5
-				if pixel_counter = 5 then
-					-- Start of next character and delayed display enable
-					pixel_counter <= (others => '0');
-					disp_enable <= lose_r;
-				else
-					pixel_counter <= pixel_counter + 1;
-				end if;
+				pixel_counter <= pixel_counter + 1;
 			end if;
 			
-			if DEW = '1' then
+			-- Rising edge of LOSE is the start of the active line
+			if lose_r = '1' and lose_latch = '0' then
+				-- Reset pixel counter - small offset to make the output
+				-- line up with the cursor from the video ULA
+				pixel_counter <= "011";
+			end if;
+						
+			-- Count frames on end of VSYNC (falling edge of DEW)
+			if dew_r = '0' and dew_latch = '1' then
+				flash_counter <= flash_counter + 1;
+			end if;
+			
+			if dew_r = '1' then
 				-- Reset line counter and double height state during VSYNC
 				line_counter <= (others => '0');
 				double_high1 <= '0';
 				double_high2 <= '0';
 			else
-				-- Count frames on end of VSYNC (falling edge of DEW)
-				if DEW = '0' and dew_r = '1' then
-					flash_counter <= flash_counter + 1;
-				end if;
-				
 				-- Count lines on end of active video (falling edge of disp_enable)
-				if disp_enable = '0' and disp_enable_r = '1' then
+				if disp_enable = '0' and disp_enable_latch = '1' then
 					if line_counter = 9 then
 						line_counter <= (others => '0');
 						

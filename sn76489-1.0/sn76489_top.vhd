@@ -197,6 +197,14 @@ begin
     );
 
 
-  aout_o <= tone1_s + tone2_s + tone3_s + noise_s;
+	-- Register output
+	process(clock_i)
+	begin
+		if res_n_i = '0' then
+			aout_o <= (others => '0');
+		elsif rising_edge(clock_i) then
+			aout_o <= tone1_s + tone2_s + tone3_s + noise_s;
+		end if;
+	end process;
 
 end struct;
