@@ -63,6 +63,7 @@ signal delayed_disen	:	std_logic;
 
 -- Internal clock enable generation
 signal clken_pixel		:	std_logic;
+signal clken_fetch		:	std_logic;
 signal clken_counter	:	unsigned(3 downto 0);
 
 -- Cursor generation - can span up to 32 pixels
@@ -70,7 +71,7 @@ signal clken_counter	:	unsigned(3 downto 0);
 -- Segment 2 is 16 pixels wide
 signal cursor_invert	:	std_logic;
 signal cursor_active	:	std_logic;
-signal cursor_counter	:	unsigned(4 downto 0);
+signal cursor_counter	:	unsigned(1 downto 0);
 
 begin
 	-- Synchronous register access, enabled on every clock
@@ -116,13 +117,17 @@ begin
 		(CLKEN and not clken_counter(0))						when r0_pixel_rate = "10" else
 		(CLKEN and not (clken_counter(0) or clken_counter(1)))	when r0_pixel_rate = "01" else
 		(CLKEN and not (clken_counter(0) or clken_counter(1) or clken_counter(2)));
-		
 	-- The CRT controller is always enabled in the 15th cycle, so that the result
 	-- is ready for latching into the shift register in cycle 0.  If 2 MHz mode is
 	-- selected then the CRTC is also enabled in the 7th cycle
 	CLKEN_CRTC <= CLKEN and
 		clken_counter(0) and clken_counter(1) and clken_counter(2) and
 		(clken_counter(3) or r0_crtc_2mhz);
+	-- The result is fetched from the CRTC in cycle 0 and also cycle 8 if 2 MHz
+	-- mode is selected.  This is used for reloading the shift register as well as
+	-- counting cursor pixels
+	clken_fetch <= CLKEN and not (clken_counter(0) or clken_counter(1) or clken_counter(2) or
+		(clken_counter(3) and not r0_crtc_2mhz));
 		
 	process(CLOCK,nRESET)
 	begin
@@ -140,8 +145,7 @@ begin
 		if nRESET = '0' then
 			shiftreg <= (others => '0');
 		elsif rising_edge(CLOCK) and clken_pixel = '1' then
-			if clken_counter = "0000" or
-				(clken_counter = "1000" and r0_crtc_2mhz = '1') then
+			if clken_fetch = '1' then
 				-- Fetch next byte from RAM into shift register.  This always occurs in
 				-- cycle 0, and also in cycle 8 if the CRTC is clocked at double rate.
 				shiftreg <= DI_RAM;
@@ -154,21 +158,21 @@ begin
 	
 	-- Cursor generation
 	cursor_invert <= cursor_active and
-		((r0_cursor0 and not (cursor_counter(4) or cursor_counter(3))) or
-		(r0_cursor1 and cursor_counter(3) and not cursor_counter(4)) or
-		(r0_cursor2 and cursor_counter(4)));
+		((r0_cursor0 and not (cursor_counter(0) or cursor_counter(1))) or
+		(r0_cursor1 and cursor_counter(0) and not cursor_counter(1)) or
+		(r0_cursor2 and cursor_counter(1)));
 	process(CLOCK,nRESET)
 	begin
 		if nRESET = '0' then
 			cursor_active <= '0';
 			cursor_counter <= (others => '0');
-		elsif rising_edge(CLOCK) and CLKEN = '1' then
+		elsif rising_edge(CLOCK) and clken_fetch = '1' then
 			if CURSOR = '1' or cursor_active = '1' then
 				-- Latch cursor
 				cursor_active <= '1';
 		
 				-- Reset on counter wrap
-				if cursor_counter = "11111" then
+				if cursor_counter = "11" then
 					cursor_active <= '0';
 				end if;
 				

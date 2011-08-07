@@ -246,6 +246,42 @@ port (
 	);
 end component;
 
+--------------------------------
+-- SAA5050 Teletext Generator
+--------------------------------
+
+component saa5050 is
+port (
+	CLOCK		:	in	std_logic;	
+	-- 6 MHz dot clock enable
+	CLKEN		:	in	std_logic;
+	-- Async reset
+	nRESET		:	in	std_logic;
+	
+	-- Character data input (in the bus clock domain)
+	DI_CLOCK	:	in	std_logic;
+	DI_CLKEN	:	in	std_logic;
+	DI			:	in	std_logic_vector(6 downto 0);
+	
+	-- Timing inputs
+	-- General line reset (not used)
+	GLR			:	in	std_logic; -- /HSYNC
+	-- Data entry window - high during VSYNC.
+	-- Resets ROM row counter and drives 'flash' signal
+	DEW			:	in	std_logic; -- VSYNC
+	-- Character rounding select - high during even field
+	CRS			:	in	std_logic; -- FIELD
+	-- Load output shift register enable - high during active video
+	LOSE		:	in	std_logic; -- DE
+	
+	-- Video out
+	R			:	out	std_logic;
+	G			:	out	std_logic;
+	B			:	out	std_logic;
+	Y			:	out	std_logic
+	);
+end component;
+
 -------------
 -- MOS ROM
 -------------
@@ -514,6 +550,9 @@ signal vid_clken		:	std_logic; -- 16 MHz video cycles
 signal mhz4_clken		:	std_logic; -- Used by 6522
 signal mhz2_clken		:	std_logic; -- Used for latching CPU address for clock stretch
 signal mhz1_clken		:	std_logic; -- 1 MHz bus and associated peripherals, 6522 phase 2
+-- SAA5050 needs a 6 MHz clock enable relative to a 24 MHz clock
+signal ttxt_clken_counter	:	unsigned(1 downto 0);
+signal ttxt_clken		:	std_logic;
 
 -- Testing
 signal test_uart_do		:	std_logic_vector(7 downto 0);
@@ -566,6 +605,16 @@ signal b_in				:	std_logic;
 signal r_out			:	std_logic;
 signal g_out			:	std_logic;
 signal b_out			:	std_logic;
+
+-- SAA5050 signals
+signal ttxt_glr			:	std_logic;
+signal ttxt_dew			:	std_logic;
+signal ttxt_crs			:	std_logic;
+signal ttxt_lose		:	std_logic;
+signal ttxt_r			:	std_logic;
+signal ttxt_g			:	std_logic;
+signal ttxt_b			:	std_logic;
+signal ttxt_y			:	std_logic;
 
 -- MOS ROM signals
 signal mos_d			:	std_logic_vector(7 downto 0);
@@ -764,6 +813,20 @@ begin
 		r_out, g_out, b_out
 		);
 		
+	teletext : saa5050 port map (
+		CLOCK_24(0), -- This runs at 6 MHz, which we can't derive from the 32 MHz clock
+		ttxt_clken,
+		reset_n,
+		clock, -- Data input is synchronised from the bus clock domain
+		vid_clken,
+		SRAM_DQ(6 downto 0),
+		ttxt_glr,
+		ttxt_dew,
+		ttxt_crs,
+		ttxt_lose,
+		ttxt_r, ttxt_g, ttxt_b, ttxt_y
+		);
+		
 	-- MOS ROM
 	mos : os12 port map (
 		cpu_a(13 downto 0),
@@ -921,6 +984,18 @@ begin
 			end if;
 		end if;
 	end process;
+	
+	ttxt_clk_gen: process(CLOCK_24(0),reset_n)
+	begin
+		if reset_n = '0' then
+			ttxt_clken_counter <= (others => '0');
+		elsif rising_edge(CLOCK_24(0)) then
+			ttxt_clken_counter <= ttxt_clken_counter + 1;
+		end if;
+	end process;
+	
+	-- 6 MHz clock enable for SAA5050
+	ttxt_clken <= '1' when ttxt_clken_counter = 0 else '0';
 
 	-- CPU configuration and fixed signals
 	cpu_mode <= "00"; -- 6502
@@ -1118,9 +1193,15 @@ begin
 	-- VIDPROC
 	vidproc_invert_n <= '1';
 	vidproc_disen <= crtc_de and not crtc_ra(3); -- DISEN is masked off by RA(3) for MODEs 3 and 6
-	r_in <= '0'; -- FIXME: From SAA5050
-	g_in <= '0';
-	b_in <= '0';
+	r_in <= ttxt_r;
+	g_in <= ttxt_g;
+	b_in <= ttxt_b;
+	
+	-- SAA5050
+	ttxt_glr <= not crtc_hsync;
+	ttxt_dew <= crtc_vsync;
+	ttxt_crs <= not crtc_ra(0);
+	ttxt_lose <= crtc_de;
 	
 	-- CRTC drives video out (CSYNC on HSYNC output, VSYNC high)
 	VGA_HS <= not (crtc_hsync xor crtc_vsync);
@@ -1199,8 +1280,7 @@ begin
 	-- DEBUG STUFF
 	-----------------
 	
-	GPIO_0(0) <= user_via_pb_out(1); --clk
-	GPIO_0(1) <= user_via_pb_out(0); --do
-	GPIO_0(2) <= SD_MISO; -- di
+	GPIO_0(0) <= not (crtc_hsync xor crtc_vsync);
+	GPIO_0(1) <= crtc_de;
 
 end architecture;

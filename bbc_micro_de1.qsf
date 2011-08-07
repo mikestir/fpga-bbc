@@ -537,4 +537,5 @@ set_global_assignment -name QIP_FILE ehbasic.qip
 set_global_assignment -name VHDL_FILE m6522_tb.vhd
 set_global_assignment -name VHDL_FILE keyboard.vhd
 set_global_assignment -name VHDL_FILE debugger.vhd
+set_global_assignment -name QIP_FILE saa5050_rom.qip
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
