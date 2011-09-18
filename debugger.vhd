@@ -1,9 +1,3 @@
---
--- General purpose hardware debugger
---
--- (C) 2011 Mike Stirling
---
-
 -- BBC Micro for Altera DE1
 --
 -- Copyright (c) 2011 Mike Stirling
@@ -22,7 +16,11 @@
 --
 -- * Neither the name of the author nor the names of other contributors may
 --   be used to endorse or promote products derived from this software without
---   specific prior written permission.
+--   specific prior written agreement from the author.
+--
+-- * License is granted for non-commercial use only.  A fee may not be charged
+--   for redistributions as source code or in synthesized/hardware form without 
+--   specific prior written agreement from the author.
 --
 -- THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 -- AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
@@ -35,6 +33,11 @@
 -- CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 -- ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 -- POSSIBILITY OF SUCH DAMAGE.
+--
+--
+-- General purpose hardware debugger
+--
+-- (C) 2011 Mike Stirling
 --
 
 library IEEE;
