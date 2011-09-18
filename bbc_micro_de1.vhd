@@ -43,6 +43,32 @@ use IEEE.NUMERIC_STD.ALL;
 
 -- Generic top-level entity for Altera DE1 board
 entity bbc_micro_de1 is
+generic (
+	-- ROM offset
+	-- The 4MB Flash is used in 16KB banks as a simple mechanism for
+	-- different machines to address different parts of the ROM, saving
+	-- on re-flashing each time a new machine is run on the board.
+	-- This generic sets the upper 8 address bits.
+	-- Note that the lower bits may be ignored by the implementation,
+	-- e.g. where ROMs are bigger than 16K or where multiple banks
+	-- are required.  In this case it is important to ensure that the
+	-- ROM images are aligned correctly (such that these ignored bits are 0).
+	--
+	-- For the BBC the ROMs start in bank 8 (the first 8 banks are used by
+	-- the Spectrum project).  The particular bank is selected by the sideways
+	-- ROM paging register, and bank 7 is used for the MOS.  Recommended layout
+	-- is:
+	--
+	-- 0 Sideways
+	-- 1 Sideways
+	-- 2 Sideways - SuperMMC (DFS)
+	-- 3 Sideways - BASIC
+	-- 4 Not used
+	-- 5 Not used
+	-- 6 Not used
+	-- 7 MOS
+	ROM_OFFSET			:	std_logic_vector(7 downto 0) := "00001000"
+	);
 port (
 	-- Clocks
 	CLOCK_24	:	in	std_logic_vector(1 downto 0);
@@ -148,35 +174,6 @@ component pll32 IS
 		inclk0		: IN STD_LOGIC  := '0';
 		c0			: OUT STD_LOGIC ;
 		locked		: OUT STD_LOGIC 
-	);
-end component;
-
-------------------------------
--- Test UART for custom ROM
-------------------------------
-
-component simple_uart is
-generic (
-	f_clock		:	natural	:= 32000000;
-	baud_rate	:	natural	:= 19200
-	);
-port (
-	CLOCK		:	in	std_logic;
-	nRESET		:	in	std_logic;
-	
-	ENABLE		:	in	std_logic;
-	-- Read not write
-	R_nW		:	in	std_logic;
-	-- Data not status (address)
-	S_nD		:	in	std_logic;
-	-- Data bus in
-	DI			:	in	std_logic_vector(7 downto 0);
-	-- Data bus out
-	DO			:	out	std_logic_vector(7 downto 0);
-	
-	-- Port pins
-	RXD			:	in	std_logic;
-	TXD			:	out	std_logic
 	);
 end component;
 
@@ -561,9 +558,6 @@ signal mhz1_clken		:	std_logic; -- 1 MHz bus and associated peripherals, 6522 ph
 signal ttxt_clken_counter	:	unsigned(1 downto 0);
 signal ttxt_clken		:	std_logic;
 
--- Testing
-signal test_uart_do		:	std_logic_vector(7 downto 0);
-
 -- Debugger connections
 signal debug_irq_in_n	:	std_logic;
 signal debug_aux		:	std_logic_vector(15 downto 0);
@@ -745,19 +739,6 @@ begin
 		HEX3, HEX2, HEX1, HEX0,
 		LEDR(3), -- BREAKPOINT
 		LEDR(2) -- WATCHPOINT
-		);
-	
-	-- Test UART
-	test_uart : simple_uart port map (
-		clock,
-		reset_n,
-		io_fred,
-		cpu_r_nw,
-		cpu_a(0),
-		cpu_do,
-		test_uart_do,
-		UART_RXD,
-		UART_TXD
 		);
 
 	-- 6502 CPU
@@ -1094,23 +1075,23 @@ begin
 		"00000010"	when acia_enable = '1' else
 		sys_via_do	when sys_via_enable = '1' else
 		user_via_do	when user_via_enable = '1' else
-		test_uart_do when io_fred = '1' else
 		(others => '0'); -- un-decoded locations are pulled down by RP1
 	debug_irq_in_n <= sys_via_irq_n and user_via_irq_n; -- route IRQ through debugger
 	--cpu_irq_n <= sys_via_irq_n and user_via_irq_n;
 	
-	-- ROMs are in external flash
+	-- ROMs are in external flash and split into 16K slots (since this also suits other
+	-- computers that might be run on the same board).
+	-- The first 8 slots are allocated for use here, and the first 4 are decoded as
+	-- the sideways ROMs.  Slot 7 is used for the MOS.
 	FL_RST_N <= reset_n;
 	FL_CE_N <= '0';
 	FL_OE_N <= '0';
 	FL_WE_N <= '1';
-	FL_ADDR(13 downto 0) <= cpu_a(13 downto 0);
-	FL_ADDR(21 downto 16) <= (others => '0');
-	FL_ADDR(15 downto 14) <= 
-		"00" when mos_enable = '1' else
-		"01" when rom_enable = '1' and romsel(1 downto 0) = "11" else	-- BASIC
-		"10" when rom_enable = '1' and romsel(1 downto 0) = "00" else	-- DFS/MMC
-		"11"; -- Spare
+	FL_ADDR(21 downto 17) <= ROM_OFFSET(7 downto 3);
+	FL_ADDR(16 downto 14) <=
+		"111" when mos_enable = '1' else
+		"0" & romsel(1 downto 0);
+	FL_ADDR(13 downto 0) <= cpu_a(13 downto 0);		
 		
 	-- SRAM bus
 	SRAM_UB_N <= '1';
